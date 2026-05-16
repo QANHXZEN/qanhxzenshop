@@ -10,6 +10,7 @@ app = Flask(__name__)
 CORS(app)
 app.secret_key = secrets.token_hex(32)
 
+# ===== CONFIG =====
 BOT_TOKEN = "8466851320:AAGc77X4DnPQRNkw7rVUhlpJVIcBlOcSlDA"
 CHAT_ID = "8588555065"
 OWNER_ID = 8588555065
@@ -31,17 +32,6 @@ def generate_key():
 def generate_verify_code():
     return ''.join([str(rnd.randint(0, 9)) for _ in range(6)])
 
-def save_key_to_bot(key, key_type):
-    try:
-        cmds = {'free': 'free 1ngay', 'week': '1w', 'month': 'vip 1thang', 'forever': 'vip vinhvien'}
-        cmd = cmds.get(key_type, 'free 1ngay')
-        requests.post(f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage',
-                json={'chat_id': CHAT_ID, 'text': f'/taokey {cmd}'}, timeout=10)
-        return True
-    except Exception as e:
-        print(f"Save key error: {e}")
-        return False
-
 def send_verification_email(to_email, code):
     try:
         msg = MIMEMultipart()
@@ -49,11 +39,11 @@ def send_verification_email(to_email, code):
         msg['To'] = to_email
         msg['Subject'] = "QANH SHOP - Mã Xác Minh Email"
         body = f"""
-        <div style="background:#0f0c29;color:#fff;padding:30px;font-family:Arial;text-align:center;border-radius:15px">
-            <h2 style="color:#FFD700">QANH SHOP</h2>
-            <p>Mã xác minh của bạn:</p>
-            <div style="font-size:36px;color:#00ff00;background:#000;padding:15px;border-radius:10px;margin:20px;letter-spacing:8px">{code}</div>
-            <p style="color:#ff6600">Mã hết hạn sau 1 phút</p>
+        <div style="background:linear-gradient(135deg,#0a0a1a,#1a1a3e);color:#fff;padding:35px;font-family:Arial;text-align:center;border-radius:20px">
+            <h2 style="color:#FFD700;font-size:26px">QANH SHOP</h2>
+            <p style="color:#ccc">Mã xác minh của bạn:</p>
+            <div style="font-size:38px;color:#00ff88;background:#000;padding:18px;border-radius:12px;margin:20px;letter-spacing:8px;border:2px dashed #00ff88">{code}</div>
+            <p style="color:#ff6b6b">⚠️ Mã hết hạn sau 1 phút</p>
         </div>
         """
         msg.attach(MIMEText(body, 'html'))
@@ -63,103 +53,129 @@ def send_verification_email(to_email, code):
         server.send_message(msg)
         server.quit()
         return True
-    except Exception as e:
-        print(f"Email error: {e}")
+    except:
         return False
 
-# ===== LOGIN HTML =====
-LOGIN_HTML = r"""<!DOCTYPE html>
+# ===== UI TEMPLATES =====
+
+def get_login_html():
+    return r"""<!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>QANH SHOP - Đăng Nhập</title>
+    <title>Đăng Nhập - QANH SHOP</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
-        :root{--gold:#FFD700;--green:#00ff88;--red:#ff4757;--blue:#00d4ff;--purple:#a855f7}
+        :root{--primary:#6C5CE7;--primary-dark:#5A4BD1;--gold:#FFD700;--green:#00D68F;--red:#FF6B6B;--blue:#45AAF2;--bg:#0F0F1A;--card:#1A1A2E;--card2:#16213E;--text:#E0E0E0;--muted:#8E8E9A}
         *{margin:0;padding:0;box-sizing:border-box}
-        body{font-family:'Segoe UI',Arial;color:#fff;min-height:100vh;background:#0a0a1a;display:flex;justify-content:center;align-items:center;padding:20px}
-        .bg-animation{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0}
-        .bg-circle{position:absolute;border-radius:50%;opacity:0.06;animation:float 20s infinite}
-        .bg-circle:nth-child(1){width:400px;height:400px;background:var(--purple);top:-100px;left:-100px}
-        .bg-circle:nth-child(2){width:300px;height:300px;background:var(--blue);bottom:-50px;right:-50px;animation-delay:-7s}
-        .bg-circle:nth-child(3){width:200px;height:200px;background:var(--gold);top:50%;left:50%;animation-delay:-14s}
-        @keyframes float{0%,100%{transform:translate(0,0) scale(1)}33%{transform:translate(30px,-30px) scale(1.1)}66%{transform:translate(-20px,20px) scale(0.9)}}
-        .container{position:relative;z-index:1;background:#1a1a2e;border-radius:24px;padding:35px 30px;max-width:440px;width:100%;border:1px solid rgba(255,215,0,0.2);box-shadow:0 20px 60px rgba(0,0,0,0.5);animation:slideUp 0.5s}
-        @keyframes slideUp{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
-        .logo{font-size:32px;background:linear-gradient(135deg,var(--gold),#FFA500);-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-align:center;font-weight:700;margin-bottom:5px}
-        .subtitle{color:#8899aa;text-align:center;margin-bottom:25px;font-size:14px}
-        .input-group{margin-bottom:16px}
-        .input-group label{display:block;color:#aabbcc;margin-bottom:6px;font-size:13px;font-weight:600}
-        .input-group input{width:100%;padding:14px 16px;border-radius:12px;border:2px solid rgba(255,255,255,0.08);background:#16213e;color:#fff;font-size:15px;transition:0.3s}
-        .input-group input:focus{border-color:var(--gold);outline:none;box-shadow:0 0 15px rgba(255,215,0,0.1)}
-        .captcha-box{background:rgba(0,0,0,0.3);border:1px dashed #555;border-radius:12px;padding:18px;text-align:center;margin:18px 0}
-        .captcha-text{font-size:28px;color:var(--gold);font-weight:700;letter-spacing:5px;margin:10px 0;user-select:none}
-        .captcha-box input{width:100%;padding:10px;border-radius:8px;border:1px solid #555;background:#000;color:#fff;text-align:center;font-size:18px;letter-spacing:4px}
-        .refresh-btn{background:none;border:none;color:var(--blue);cursor:pointer;font-size:12px;margin-top:8px}
-        .btn{display:block;width:100%;padding:15px;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;text-align:center;transition:0.3s;text-transform:uppercase}
-        .btn-gold{background:linear-gradient(135deg,var(--gold),#FFA500);color:#000;box-shadow:0 10px 30px rgba(255,165,0,0.3)}
-        .btn:hover{transform:translateY(-2px)}
-        .btn:disabled{opacity:0.5;cursor:not-allowed;transform:none}
-        .link-text{color:#667788;text-align:center;margin-top:20px;font-size:14px}
-        .link-text a{color:var(--gold);cursor:pointer;text-decoration:underline;font-weight:600}
-        .alert{background:rgba(255,71,87,0.1);border:1px solid var(--red);border-radius:10px;padding:12px;margin:10px 0;color:var(--red);font-size:13px;text-align:center}
-        .success-box{background:rgba(0,255,136,0.1);border:1px solid var(--green);border-radius:10px;padding:12px;margin:10px 0;color:var(--green);font-size:13px;text-align:center}
+        body{font-family:'Plus Jakarta Sans',Arial,sans-serif;color:var(--text);min-height:100vh;background:var(--bg);display:flex;justify-content:center;align-items:center;padding:20px}
+        
+        .bg-shapes{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;overflow:hidden;pointer-events:none}
+        .bg-shape{position:absolute;border-radius:50%;opacity:0.04}
+        .bg-shape:nth-child(1){width:600px;height:600px;background:var(--primary);top:-200px;right:-200px;animation:float1 20s infinite}
+        .bg-shape:nth-child(2){width:400px;height:400px;background:var(--blue);bottom:-100px;left:-100px;animation:float2 18s infinite}
+        .bg-shape:nth-child(3){width:300px;height:300px;background:var(--gold);top:40%;left:50%;animation:float3 22s infinite}
+        @keyframes float1{0%,100%{transform:translate(0,0)rotate(0deg)}50%{transform:translate(50px,-50px)rotate(10deg)}}
+        @keyframes float2{0%,100%{transform:translate(0,0)rotate(0deg)}50%{transform:translate(-40px,40px)rotate(-10deg)}}
+        @keyframes float3{0%,100%{transform:translate(0,0)scale(1)}50%{transform:translate(-30px,-30px)scale(1.2)}}
+        
+        .container{position:relative;z-index:1;background:var(--card);border-radius:28px;padding:45px 35px;max-width:440px;width:100%;border:1px solid rgba(255,255,255,0.06);box-shadow:0 25px 80px rgba(0,0,0,0.5);animation:slideUp 0.6s cubic-bezier(0.16,1,0.3,1)}
+        @keyframes slideUp{from{opacity:0;transform:translateY(40px)}to{opacity:1;transform:translateY(0)}}
+        
+        .logo-icon{width:65px;height:65px;background:linear-gradient(135deg,var(--primary),var(--primary-dark));border-radius:20px;display:flex;align-items:center;justify-content:center;font-size:32px;margin:0 auto 20px;box-shadow:0 15px 35px rgba(108,92,231,0.3)}
+        .title{font-size:26px;font-weight:800;color:#fff;text-align:center;margin-bottom:5px;letter-spacing:-0.5px}
+        .subtitle{color:var(--muted);text-align:center;margin-bottom:30px;font-size:14px;font-weight:400}
+        
+        .input-group{margin-bottom:18px}
+        .input-group label{display:block;color:var(--muted);margin-bottom:8px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:1.5px}
+        .input-wrapper{position:relative}
+        .input-wrapper input{width:100%;padding:15px 18px;border-radius:14px;border:2px solid rgba(255,255,255,0.06);background:var(--card2);color:#fff;font-size:15px;font-weight:500;transition:0.3s;font-family:'Plus Jakarta Sans',sans-serif}
+        .input-wrapper input:focus{border-color:var(--primary);outline:none;box-shadow:0 0 20px rgba(108,92,231,0.15);background:#1E1E3A}
+        .input-wrapper input::placeholder{color:#555}
+        
+        .captcha-box{background:rgba(108,92,231,0.04);border:1px dashed rgba(108,92,231,0.2);border-radius:14px;padding:18px;text-align:center;margin:18px 0}
+        .captcha-text{font-size:30px;font-weight:800;background:linear-gradient(135deg,var(--primary),var(--blue));-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:6px;margin:8px 0;user-select:none}
+        .captcha-box input{width:100%;padding:12px;border-radius:10px;border:2px solid rgba(255,255,255,0.08);background:#000;color:#fff;text-align:center;font-size:18px;letter-spacing:5px;font-weight:600}
+        .captcha-box input:focus{border-color:var(--primary);outline:none}
+        .refresh-link{color:var(--blue);cursor:pointer;font-size:12px;margin-top:8px;display:inline-block;font-weight:500}
+        .refresh-link:hover{color:#fff}
+        
+        .btn{display:block;width:100%;padding:16px;border:none;border-radius:14px;font-size:16px;font-weight:700;cursor:pointer;text-align:center;transition:0.3s;font-family:'Plus Jakarta Sans',sans-serif;letter-spacing:0.5px}
+        .btn-primary{background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:#fff;box-shadow:0 10px 30px rgba(108,92,231,0.35)}
+        .btn-primary:hover{transform:translateY(-2px);box-shadow:0 15px 40px rgba(108,92,231,0.45)}
+        .btn-primary:disabled{opacity:0.5;cursor:not-allowed;transform:none}
+        
+        .link-text{color:var(--muted);text-align:center;margin-top:22px;font-size:14px}
+        .link-text a{color:var(--primary);cursor:pointer;text-decoration:none;font-weight:600}
+        .link-text a:hover{color:var(--blue)}
+        
+        .alert{background:rgba(255,107,107,0.08);border:1px solid rgba(255,107,107,0.2);border-radius:12px;padding:12px;margin:10px 0;color:var(--red);font-size:13px;text-align:center}
+        .success-box{background:rgba(0,214,143,0.08);border:1px solid rgba(0,214,143,0.2);border-radius:12px;padding:12px;margin:10px 0;color:var(--green);font-size:13px;text-align:center}
+        
         .hidden{display:none!important}
-        .loading{display:inline-block;width:20px;height:20px;border:2px solid #333;border-top:2px solid var(--gold);border-radius:50%;animation:spin 0.8s linear infinite;margin-right:8px;vertical-align:middle}
+        .loading{display:inline-block;width:20px;height:20px;border:2px solid rgba(255,255,255,0.2);border-top:2px solid #fff;border-radius:50%;animation:spin 0.7s linear infinite;margin-right:8px;vertical-align:middle}
         @keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
-        .timer-text{color:#ff6600;font-size:13px;text-align:center;margin-top:10px}
-        .verify-input{text-align:center;font-size:26px!important;letter-spacing:6px!important;font-weight:700!important}
+        
+        .timer-text{color:#ff9f43;font-size:13px;text-align:center;margin-top:10px;font-weight:500}
     </style>
 </head>
 <body>
-<div class="bg-animation"><div class="bg-circle"></div><div class="bg-circle"></div><div class="bg-circle"></div></div>
+<div class="bg-shapes"><div class="bg-shape"></div><div class="bg-shape"></div><div class="bg-shape"></div></div>
 
 <div id="loginContainer" class="container">
-    <div class="logo">QANH</div>
-    <p class="subtitle">Đăng nhập để tiếp tục</p>
+    <div class="logo-icon">⚡</div>
+    <div class="title">Chào Mừng Trở Lại</div>
+    <p class="subtitle">Đăng nhập để tiếp tục sử dụng dịch vụ</p>
+    
     <div id="loginForm">
-        <div class="input-group"><label>Email hoặc tên tài khoản</label><input type="text" id="loginUser" placeholder="Nhập email hoặc tên tài khoản..." autocomplete="off"></div>
-        <div class="input-group"><label>Mật khẩu</label><input type="password" id="loginPass" placeholder="Nhập mật khẩu..." autocomplete="off"></div>
+        <div class="input-group"><label>Email hoặc tên tài khoản</label>
+            <div class="input-wrapper"><input type="text" id="loginUser" placeholder="Nhập email hoặc tên tài khoản..." autocomplete="off"></div></div>
+        <div class="input-group"><label>Mật khẩu</label>
+            <div class="input-wrapper"><input type="password" id="loginPass" placeholder="Nhập mật khẩu..." autocomplete="off"></div></div>
         <div class="captcha-box">
-            <p style="color:#aaa;font-size:12px">Xác minh bạn không phải robot</p>
+            <p style="color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:2px">Xác minh bảo mật</p>
             <div class="captcha-text" id="captchaText"></div>
             <input type="text" id="captchaInput" placeholder="Nhập mã captcha..." maxlength="5" autocomplete="off">
-            <button class="refresh-btn" onclick="generateCaptcha()">🔄 Đổi mã khác</button>
+            <span class="refresh-link" onclick="generateCaptcha()">🔄 Đổi mã khác</span>
         </div>
-        <button class="btn btn-gold" id="btnLogin" onclick="doLogin()">ĐĂNG NHẬP</button>
+        <button class="btn btn-primary" id="btnLogin" onclick="doLogin()">ĐĂNG NHẬP</button>
         <div id="loginMsg"></div>
-        <p class="link-text">Chưa có tài khoản? <a onclick="showRegister()">Đăng ký ngay</a></p>
+        <p class="link-text">Chưa có tài khoản? <a onclick="showRegister()">Tạo tài khoản mới</a></p>
     </div>
 </div>
 
 <div id="registerContainer" class="container hidden">
-    <div class="logo">QANH</div>
-    <p class="subtitle">Tạo tài khoản mới</p>
+    <div class="logo-icon">🚀</div>
+    <div class="title">Tạo Tài Khoản</div>
+    <p class="subtitle">Đăng ký để nhận key và nạp tiền</p>
+    
     <div id="registerForm">
-        <div class="input-group"><label>Email</label><input type="email" id="regEmail" placeholder="Nhập email..." autocomplete="off"></div>
-        <div class="input-group"><label>Tên tài khoản</label><input type="text" id="regUsername" placeholder="Nhập tên tài khoản..." autocomplete="off"></div>
-        <div class="input-group"><label>Mật khẩu</label><input type="password" id="regPass" placeholder="Ít nhất 6 ký tự..." autocomplete="off"></div>
-        <div class="input-group"><label>Nhập lại mật khẩu</label><input type="password" id="regPass2" placeholder="Nhập lại mật khẩu..." autocomplete="off"></div>
-        <div class="input-group"><label>Số điện thoại <span style="color:#667;font-size:11px">(không bắt buộc)</span></label><input type="tel" id="regPhone" placeholder="Nhập số điện thoại..." autocomplete="off"></div>
+        <div class="input-group"><label>Email</label><div class="input-wrapper"><input type="email" id="regEmail" placeholder="Nhập email..." autocomplete="off"></div></div>
+        <div class="input-group"><label>Tên tài khoản</label><div class="input-wrapper"><input type="text" id="regUsername" placeholder="Nhập tên tài khoản..." autocomplete="off"></div></div>
+        <div class="input-group"><label>Mật khẩu</label><div class="input-wrapper"><input type="password" id="regPass" placeholder="Ít nhất 6 ký tự..." autocomplete="off"></div></div>
+        <div class="input-group"><label>Nhập lại mật khẩu</label><div class="input-wrapper"><input type="password" id="regPass2" placeholder="Nhập lại mật khẩu..." autocomplete="off"></div></div>
+        <div class="input-group"><label>Số điện thoại <span style="color:var(--muted);font-size:10px">(không bắt buộc)</span></label><div class="input-wrapper"><input type="tel" id="regPhone" placeholder="Nhập số điện thoại..." autocomplete="off"></div></div>
         <div class="captcha-box">
-            <p style="color:#aaa;font-size:12px">Xác minh bạn không phải robot</p>
+            <p style="color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:2px">Xác minh bảo mật</p>
             <div class="captcha-text" id="captchaTextReg"></div>
             <input type="text" id="captchaInputReg" placeholder="Nhập mã captcha..." maxlength="5" autocomplete="off">
-            <button class="refresh-btn" onclick="generateCaptchaReg()">🔄 Đổi mã khác</button>
+            <span class="refresh-link" onclick="generateCaptchaReg()">🔄 Đổi mã khác</span>
         </div>
-        <button class="btn btn-gold" id="btnRegister" onclick="doRegister()">ĐĂNG KÝ</button>
+        <button class="btn btn-primary" id="btnRegister" onclick="doRegister()">TẠO TÀI KHOẢN</button>
         <div id="regMsg"></div>
-        <p class="link-text">Đã có tài khoản? <a onclick="showLogin()">Đăng nhập</a></p>
+        <p class="link-text">Đã có tài khoản? <a onclick="showLogin()">Đăng nhập ngay</a></p>
     </div>
+    
     <div id="verifyEmailForm" class="hidden">
-        <div style="text-align:center;font-size:50px;margin:10px 0">📧</div>
-        <h3 style="color:var(--gold);text-align:center;margin:10px 0">Xác Minh Email</h3>
-        <p style="color:#aabbcc;text-align:center;margin:15px 0;line-height:1.7">Mã xác minh <b style="color:var(--gold)">6 chữ số</b> đã gửi đến:<br><b style="color:var(--blue)" id="verifyEmailDisplay"></b></p>
-        <input type="text" id="verifyCode" class="verify-input" placeholder="------" maxlength="6" autocomplete="off" style="width:100%;padding:14px;border-radius:10px;border:2px solid rgba(255,255,255,0.1);background:#000;color:#fff">
+        <div style="font-size:55px;text-align:center;margin:10px 0">📧</div>
+        <div class="title" style="font-size:20px">Xác Minh Email</div>
+        <p style="color:var(--muted);text-align:center;margin:15px 0">Mã <b style="color:var(--primary)">6 chữ số</b> đã gửi đến:<br><b style="color:var(--blue)" id="verifyEmailDisplay"></b></p>
+        <div class="input-wrapper"><input type="text" id="verifyCode" placeholder="------" maxlength="6" autocomplete="off" style="text-align:center;font-size:24px;letter-spacing:8px;font-weight:700"></div>
         <p class="timer-text" id="verifyTimer">⏰ Còn 60 giây</p>
-        <button class="btn btn-gold" id="btnVerify" onclick="verifyEmail()" style="margin-top:15px">XÁC NHẬN</button>
-        <button class="btn" style="background:rgba(255,255,255,0.1);color:#fff;margin-top:8px;font-size:14px" onclick="resendCode()">📧 GỬI LẠI MÃ</button>
+        <button class="btn btn-primary" id="btnVerify" onclick="verifyEmail()" style="margin-top:15px">XÁC NHẬN</button>
+        <button class="btn" style="background:rgba(255,255,255,0.05);color:var(--muted);margin-top:8px;font-size:14px" onclick="resendCode()">📧 GỬI LẠI MÃ</button>
         <div id="verifyMsg"></div>
-        <p class="link-text"><a onclick="showLogin()">← Quay lại đăng nhập</a></p>
+        <p class="link-text"><a onclick="showLogin()">← Quay lại</a></p>
     </div>
 </div>
 
@@ -175,13 +191,13 @@ function showRegister(){document.getElementById('loginContainer').classList.add(
 function showLogin(){document.getElementById('registerContainer').classList.add('hidden');document.getElementById('loginContainer').classList.remove('hidden');document.getElementById('verifyEmailForm').classList.add('hidden');if(verifyTimerInterval)clearInterval(verifyTimerInterval);generateCaptcha();}
 
 function startVerifyTimer(){verifySeconds=60;updateTimer();if(verifyTimerInterval)clearInterval(verifyTimerInterval);verifyTimerInterval=setInterval(function(){verifySeconds--;updateTimer();if(verifySeconds<=0){clearInterval(verifyTimerInterval);document.getElementById('verifyTimer').innerHTML='<span style="color:#f44">❌ Mã hết hạn!</span>';document.getElementById('btnVerify').disabled=true;}},1000);}
-function updateTimer(){var el=document.getElementById('verifyTimer');if(verifySeconds>10)el.innerHTML='⏰ Còn <b>'+verifySeconds+'</b> giây';else if(verifySeconds>0)el.innerHTML='⚠️ Còn <b style="color:#ff6600">'+verifySeconds+'</b> giây';}
+function updateTimer(){var el=document.getElementById('verifyTimer');if(verifySeconds>10)el.innerHTML='⏰ Còn <b>'+verifySeconds+'</b> giây';else el.innerHTML='⚠️ Còn <b style="color:#ff9f43">'+verifySeconds+'</b> giây';}
 
 function doLogin(){
     var user=document.getElementById('loginUser').value.trim(),pass=document.getElementById('loginPass').value.trim(),captcha=document.getElementById('captchaInput').value.trim(),msg=document.getElementById('loginMsg');
-    if(!user||!pass||!captcha){msg.innerHTML='<div class="alert">⚠️ Điền đầy đủ!</div>';return;}
+    if(!user||!pass||!captcha){msg.innerHTML='<div class="alert">⚠️ Vui lòng điền đầy đủ!</div>';return;}
     if(captcha.toUpperCase()!==captchaAnswer){msg.innerHTML='<div class="alert">❌ Mã captcha không đúng!</div>';generateCaptcha();return;}
-    var btn=document.getElementById('btnLogin');btn.disabled=true;btn.innerHTML='<span class="loading"></span> ĐANG ĐĂNG NHẬP...';msg.innerHTML='';
+    var btn=document.getElementById('btnLogin');btn.disabled=true;btn.innerHTML='<span class="loading"></span> ĐANG XỬ LÝ...';msg.innerHTML='';
     fetch(API+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user:user,password:pass})})
     .then(function(r){return r.json()}).then(function(d){
         if(d.status==='success'){localStorage.setItem('qanh_user',JSON.stringify(d.user));msg.innerHTML='<div class="success-box">✅ Đăng nhập thành công!</div>';setTimeout(function(){window.location.href='/shop'},1000)}
@@ -195,13 +211,13 @@ function doRegister(){
     if(pass!==pass2){msg.innerHTML='<div class="alert">❌ Mật khẩu không khớp!</div>';return;}
     if(pass.length<6){msg.innerHTML='<div class="alert">❌ Mật khẩu ít nhất 6 ký tự!</div>';return;}
     if(captcha.toUpperCase()!==captchaAnswerReg){msg.innerHTML='<div class="alert">❌ Mã captcha không đúng!</div>';generateCaptchaReg();return;}
-    var btn=document.getElementById('btnRegister');btn.disabled=true;btn.innerHTML='<span class="loading"></span> ĐANG ĐĂNG KÝ...';msg.innerHTML='';
+    var btn=document.getElementById('btnRegister');btn.disabled=true;btn.innerHTML='<span class="loading"></span> ĐANG XỬ LÝ...';msg.innerHTML='';
     fetch(API+'/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email,username:username,password:pass,phone:phone})})
     .then(function(r){return r.json()}).then(function(d){
         if(d.status==='success'){pendingEmail=email;document.getElementById('verifyEmailDisplay').innerText=email;document.getElementById('registerForm').classList.add('hidden');document.getElementById('verifyEmailForm').classList.remove('hidden');document.getElementById('verifyCode').value='';document.getElementById('btnVerify').disabled=false;startVerifyTimer();document.getElementById('verifyMsg').innerHTML='<div class="success-box">✅ Mã 6 số đã gửi!</div>';}
         else{msg.innerHTML='<div class="alert">❌ '+(d.message||'Thất bại!')+'</div>';generateCaptchaReg();}
-        btn.disabled=false;btn.innerHTML='ĐĂNG KÝ';
-    }).catch(function(){msg.innerHTML='<div class="alert">❌ Lỗi kết nối!</div>';btn.disabled=false;btn.innerHTML='ĐĂNG KÝ'});
+        btn.disabled=false;btn.innerHTML='TẠO TÀI KHOẢN';
+    }).catch(function(){msg.innerHTML='<div class="alert">❌ Lỗi kết nối!</div>';btn.disabled=false;btn.innerHTML='TẠO TÀI KHOẢN'});
 }
 
 function verifyEmail(){
@@ -232,70 +248,84 @@ generateCaptcha();generateCaptchaReg();
 </body>
 </html>"""
 
-# ===== SHOP HTML =====
-SHOP_HTML = r"""<!DOCTYPE html>
+def get_shop_html():
+    return r"""<!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>QANH SHOP - Key Uy Tín</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
-        :root{--gold:#FFD700;--green:#00ff88;--red:#ff4757;--blue:#00d4ff;--purple:#a855f7;--bg:#0a0a1a;--card:#1a1a2e}
+        :root{--primary:#6C5CE7;--primary-dark:#5A4BD1;--gold:#FFD700;--green:#00D68F;--red:#FF6B6B;--blue:#45AAF2;--purple:#A855F7;--orange:#FF9F43;--bg:#0F0F1A;--card:#1A1A2E;--card2:#16213E;--text:#E0E0E0;--muted:#8E8E9A}
         *{margin:0;padding:0;box-sizing:border-box}
-        body{font-family:'Segoe UI',Arial;color:#fff;min-height:100vh;background:var(--bg)}
-        .navbar{position:sticky;top:0;z-index:100;background:rgba(10,10,26,0.9);backdrop-filter:blur(20px);padding:15px 20px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,215,0,0.15);flex-wrap:wrap;gap:10px}
-        .navbar .logo{font-size:24px;font-weight:700;background:linear-gradient(135deg,var(--gold),#FFA500);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-        .navbar .balance{background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.3);border-radius:25px;padding:8px 16px;color:var(--gold);font-weight:600;cursor:pointer;font-size:13px}
-        .navbar .btn-nav{background:var(--gold);color:#000;border:none;border-radius:25px;padding:8px 20px;font-weight:700;cursor:pointer;font-size:13px;transition:0.3s}
-        .navbar .btn-nav:hover{transform:scale(1.05)}
-        .navbar .btn-admin{background:var(--purple);color:#fff}
-        .container{max-width:520px;margin:0 auto;padding:25px 15px}
-        .card{background:var(--card);border-radius:18px;padding:22px;margin-bottom:18px;border:1px solid rgba(255,255,255,0.06);transition:0.3s}
-        .card:hover{border-color:rgba(255,215,0,0.2);transform:translateY(-2px);box-shadow:0 15px 40px rgba(0,0,0,0.4)}
-        .card h2{color:var(--gold);margin-bottom:8px;font-size:18px;display:flex;align-items:center;gap:10px}
-        .card .price{font-size:34px;font-weight:700;color:var(--gold)}
-        .card .duration{color:#8899aa;margin:5px 0;font-size:13px}
-        .card ul{list-style:none;margin:10px 0}
-        .card ul li{padding:5px 0;color:#aabbcc;font-size:13px}
-        .card ul li::before{content:"✦ ";color:var(--gold)}
-        .btn-card{display:block;width:100%;padding:15px;border:none;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;text-align:center;margin-top:12px;transition:0.3s;text-transform:uppercase}
+        body{font-family:'Plus Jakarta Sans',Arial,sans-serif;color:var(--text);min-height:100vh;background:var(--bg)}
+        
+        .navbar{position:sticky;top:0;z-index:100;background:rgba(15,15,26,0.85);backdrop-filter:blur(25px);padding:15px 20px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(108,92,231,0.15);flex-wrap:wrap;gap:10px}
+        .navbar .logo{font-size:22px;font-weight:800;background:linear-gradient(135deg,var(--primary),var(--blue));-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:-0.5px}
+        .navbar .user-info{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+        .navbar .balance{background:rgba(108,92,231,0.08);border:1px solid rgba(108,92,231,0.25);border-radius:30px;padding:8px 16px;color:var(--primary);font-weight:600;cursor:pointer;font-size:13px;transition:0.3s}
+        .navbar .balance:hover{background:rgba(108,92,231,0.15)}
+        .navbar .btn-nav{background:var(--primary);color:#fff;border:none;border-radius:30px;padding:9px 20px;font-weight:600;cursor:pointer;font-size:13px;transition:0.3s;font-family:'Plus Jakarta Sans',sans-serif}
+        .navbar .btn-nav:hover{background:var(--primary-dark);transform:scale(1.03)}
+        .navbar .btn-admin{background:var(--purple)}
+        
+        .container{max-width:540px;margin:0 auto;padding:25px 15px}
+        
+        .card{background:var(--card);border-radius:20px;padding:25px;margin-bottom:20px;border:1px solid rgba(255,255,255,0.04);transition:0.3s;position:relative;overflow:hidden}
+        .card:hover{border-color:rgba(108,92,231,0.2);transform:translateY(-2px);box-shadow:0 20px 50px rgba(0,0,0,0.4)}
+        .card h2{color:#fff;margin-bottom:8px;font-size:18px;font-weight:700;display:flex;align-items:center;gap:10px}
+        .card .price{font-size:38px;font-weight:800;background:linear-gradient(135deg,var(--primary),var(--blue));-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:-1px}
+        .card .duration{color:var(--muted);margin:3px 0;font-size:13px;font-weight:500}
+        .card ul{list-style:none;margin:12px 0}
+        .card ul li{padding:5px 0;color:var(--muted);font-size:13px;font-weight:500}
+        .card ul li::before{content:"✦ ";color:var(--primary)}
+        
+        .btn-card{display:block;width:100%;padding:15px;border:none;border-radius:14px;font-size:15px;font-weight:700;cursor:pointer;text-align:center;margin-top:12px;transition:0.3s;font-family:'Plus Jakarta Sans',sans-serif;letter-spacing:0.3px}
         .btn-card:hover{transform:translateY(-2px)}
         .btn-card:disabled{opacity:0.5;cursor:not-allowed;transform:none}
-        .btn-green{background:linear-gradient(135deg,#00cc66,#009944);color:#fff;box-shadow:0 8px 25px rgba(0,200,100,0.25)}
-        .btn-gold{background:linear-gradient(135deg,var(--gold),#FFA500);color:#000;box-shadow:0 8px 25px rgba(255,165,0,0.3)}
-        .btn-blue{background:linear-gradient(135deg,#0077ff,#0055cc);color:#fff;box-shadow:0 8px 25px rgba(0,100,255,0.25)}
-        .btn-purple{background:linear-gradient(135deg,#9933ff,#6600cc);color:#fff;box-shadow:0 8px 25px rgba(153,51,255,0.25)}
-        .btn-recharge{background:linear-gradient(135deg,#00ff88,#00cc66);color:#000;font-size:17px;padding:16px;box-shadow:0 8px 25px rgba(0,255,136,0.3)}
-        .badge{display:inline-block;padding:4px 12px;border-radius:20px;font-size:10px;font-weight:700;text-transform:uppercase}
-        .badge-free{background:rgba(0,255,136,0.15);color:var(--green)}
-        .badge-vip{background:rgba(255,215,0,0.15);color:var(--gold)}
-        .badge-hot{background:rgba(255,102,0,0.15);color:#ff6600;animation:pulse 1.5s infinite}
-        @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.6}}
-        select,input[type="text"]{width:100%;padding:13px 15px;margin:7px 0;border-radius:10px;border:2px solid rgba(255,255,255,0.08);background:#16213e;color:#fff;font-size:14px;transition:0.3s}
-        select:focus,input:focus{border-color:var(--gold);outline:none}
-        select option{background:#1a1a2e;color:#fff}
-        .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:1000;justify-content:center;align-items:center}
+        .btn-green{background:linear-gradient(135deg,#00D68F,#00B377);color:#fff;box-shadow:0 8px 25px rgba(0,214,143,0.25)}
+        .btn-gold{background:linear-gradient(135deg,#FFD700,#FFA500);color:#000;box-shadow:0 8px 25px rgba(255,165,0,0.3)}
+        .btn-blue{background:linear-gradient(135deg,#45AAF2,#2D8FD5);color:#fff;box-shadow:0 8px 25px rgba(69,170,242,0.25)}
+        .btn-purple{background:linear-gradient(135deg,#A855F7,#8B3FE0);color:#fff;box-shadow:0 8px 25px rgba(168,85,247,0.25)}
+        .btn-primary{background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:#fff;box-shadow:0 8px 25px rgba(108,92,231,0.3)}
+        .btn-recharge{background:linear-gradient(135deg,#00D68F,#00B377);color:#fff;font-size:17px;padding:18px;font-weight:800;box-shadow:0 10px 30px rgba(0,214,143,0.3)}
+        
+        .badge{display:inline-block;padding:4px 12px;border-radius:25px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px}
+        .badge-free{background:rgba(0,214,143,0.12);color:var(--green)}
+        .badge-vip{background:rgba(108,92,231,0.12);color:var(--primary)}
+        .badge-hot{background:rgba(255,159,67,0.12);color:var(--orange);animation:pulse 2s infinite}
+        @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+        
+        select,input[type="text"],input[type="number"]{width:100%;padding:14px 16px;margin:7px 0;border-radius:12px;border:2px solid rgba(255,255,255,0.05);background:var(--card2);color:#fff;font-size:14px;font-weight:500;font-family:'Plus Jakarta Sans',sans-serif;transition:0.3s}
+        select:focus,input:focus{border-color:var(--primary);outline:none;box-shadow:0 0 15px rgba(108,92,231,0.1)}
+        select option{background:var(--card);color:#fff}
+        
+        .card-accent{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--primary),var(--blue),var(--green));border-radius:20px 20px 0 0}
+        .card-gold-accent{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--gold),var(--orange));border-radius:20px 20px 0 0}
+        
+        .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:1000;justify-content:center;align-items:center;backdrop-filter:blur(5px)}
         .modal.active{display:flex}
-        .modal-content{background:var(--card);border-radius:20px;padding:30px;width:90%;max-width:440px;text-align:center;max-height:85vh;overflow-y:auto;border:1px solid rgba(255,215,0,0.2);animation:modalIn 0.3s}
-        @keyframes modalIn{from{opacity:0;transform:scale(0.9)translateY(20px)}to{opacity:1;transform:scale(1)translateY(0)}}
-        .modal-content h3{color:var(--gold);margin-bottom:15px;font-size:22px}
-        .close-btn{float:right;color:#889;font-size:26px;cursor:pointer;background:none;border:none}
+        .modal-content{background:var(--card);border-radius:24px;padding:30px;width:90%;max-width:440px;text-align:center;max-height:85vh;overflow-y:auto;border:1px solid rgba(255,255,255,0.06);box-shadow:0 30px 80px rgba(0,0,0,0.6);animation:modalIn 0.3s cubic-bezier(0.16,1,0.3,1)}
+        @keyframes modalIn{from{opacity:0;transform:scale(0.9)translateY(30px)}to{opacity:1;transform:scale(1)translateY(0)}}
+        .modal-content h3{font-size:22px;font-weight:700;margin-bottom:15px}
+        .close-btn{float:right;color:var(--muted);font-size:24px;cursor:pointer;background:none;border:none;transition:0.3s}
         .close-btn:hover{color:#fff}
-        .key-display{font-size:15px;color:var(--green);font-family:monospace;background:rgba(0,0,0,0.5);padding:18px;border-radius:12px;margin:15px 0;word-break:break-all;border:2px dashed rgba(0,255,136,0.4)}
-        .copy-btn{background:var(--gold);color:#000;border:none;padding:14px;border-radius:12px;cursor:pointer;font-weight:700;font-size:16px;width:100%;margin-top:10px;text-transform:uppercase}
-        .copy-btn:hover{background:#fff}
-        .alert-box{background:rgba(255,71,87,0.1);border:1px solid var(--red);border-radius:12px;padding:14px;margin:10px 0;color:var(--red);font-size:13px}
-        .success-box{background:rgba(0,255,136,0.1);border:1px solid var(--green);border-radius:12px;padding:14px;margin:10px 0;color:var(--green);font-size:13px}
-        .loading{display:inline-block;width:24px;height:24px;border:3px solid rgba(255,255,255,0.1);border-top:3px solid var(--gold);border-radius:50%;animation:spin 0.8s linear infinite;margin:10px auto}
+        .key-display{font-size:15px;color:var(--green);font-family:'Courier New',monospace;background:rgba(0,0,0,0.5);padding:18px;border-radius:14px;margin:15px 0;word-break:break-all;border:2px dashed rgba(0,214,143,0.3);letter-spacing:0.5px}
+        .copy-btn{background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:#fff;border:none;padding:14px;border-radius:14px;cursor:pointer;font-weight:700;font-size:15px;width:100%;margin-top:10px;font-family:'Plus Jakarta Sans',sans-serif;transition:0.3s}
+        .copy-btn:hover{transform:translateY(-2px)}
+        
+        .alert-box{background:rgba(255,107,107,0.06);border:1px solid rgba(255,107,107,0.2);border-radius:14px;padding:14px;margin:10px 0;color:var(--red);font-size:13px}
+        .success-box{background:rgba(0,214,143,0.06);border:1px solid rgba(0,214,143,0.2);border-radius:14px;padding:14px;margin:10px 0;color:var(--green);font-size:13px}
+        .loading{display:inline-block;width:24px;height:24px;border:3px solid rgba(255,255,255,0.1);border-top:3px solid var(--primary);border-radius:50%;animation:spin 0.7s linear infinite;margin:10px auto}
         @keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
-        .toast{position:fixed;top:20px;right:20px;z-index:10000;padding:14px 20px;border-radius:12px;color:#fff;font-weight:600;font-size:14px;animation:slideIn 0.4s}
+        
+        .toast{position:fixed;top:20px;right:20px;z-index:10000;padding:14px 22px;border-radius:14px;color:#fff;font-weight:600;font-size:14px;animation:slideIn 0.4s cubic-bezier(0.16,1,0.3,1);box-shadow:0 10px 40px rgba(0,0,0,0.5);font-family:'Plus Jakarta Sans',sans-serif}
         .toast-success{background:var(--green);color:#000}
         .toast-error{background:var(--red)}
         @keyframes slideIn{from{transform:translateX(120%)}to{transform:translateX(0)}}
-        .info-text{color:#667788;font-size:12px;margin-top:8px;text-align:center}
+        
+        .info-text{color:var(--muted);font-size:12px;margin-top:8px;text-align:center;font-weight:500}
         .hidden{display:none!important}
-        .recharge-card{border-color:rgba(0,255,136,0.2)}
-        .recharge-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--green),var(--blue))}
-        .forever-card{box-shadow:0 0 30px rgba(255,215,0,0.1)}
     </style>
 </head>
 <body>
@@ -303,56 +333,71 @@ SHOP_HTML = r"""<!DOCTYPE html>
     <div class="logo">QANH SHOP</div>
     <div class="user-info">
         <span class="balance" id="balanceDisplay" onclick="document.getElementById('rechargeSection').scrollIntoView({behavior:'smooth'})">💰 0đ</span>
-        <button class="btn-nav" id="userBtn" onclick="logout()">👤 USER</button>
+        <button class="btn-nav" id="userBtn" onclick="logout()">👤 TÀI KHOẢN</button>
         <button class="btn-nav btn-admin hidden" id="adminBtn" onclick="showAdminModal()">⚙️ ADMIN</button>
     </div>
 </div>
 
 <div class="container">
-    <div class="card recharge-card" id="rechargeSection" style="position:relative;overflow:hidden">
-        <h2>💳 NẠP TIỀN VÀO TÀI KHOẢN</h2>
+    <!-- NẠP TIỀN -->
+    <div class="card" id="rechargeSection">
+        <div class="card-accent"></div>
+        <h2>💳 Nạp Tiền Vào Tài Khoản</h2>
         <select id="rcType"><option value="">Chọn nhà mạng</option><option value="VIETTEL">📱 Viettel</option><option value="MOBIFONE">📱 Mobifone</option><option value="VINAPHONE">📱 Vinaphone</option></select>
         <select id="rcAmount"><option value="">Chọn mệnh giá</option><option value="10000">10.000đ</option><option value="20000">20.000đ</option><option value="50000">50.000đ</option><option value="100000">100.000đ</option><option value="200000">200.000đ</option><option value="500000">500.000đ</option></select>
         <input type="text" id="rcPin" placeholder="🔢 Nhập mã thẻ...">
         <input type="text" id="rcSerial" placeholder="📝 Nhập số serial...">
         <button class="btn-card btn-recharge" onclick="recharge()">💳 NẠP TIỀN NGAY</button>
-        <div id="rcResult" style="margin-top:10px;text-align:center"></div>
+        <div id="rcResult" style="margin-top:12px;text-align:center"></div>
     </div>
-
-    <div class="card" style="border-color:rgba(0,255,136,0.3)">
+    
+    <!-- KEY FREE -->
+    <div class="card" style="border-color:rgba(0,214,143,0.15)">
+        <div class="card-accent" style="background:linear-gradient(90deg,var(--green),var(--blue))"></div>
         <h2>🆓 KEY FREE <span class="badge badge-free">MIỄN PHÍ</span></h2>
-        <div class="price">0đ</div><div class="duration">⏰ 1 ngày</div>
+        <div class="price" style="background:linear-gradient(135deg,var(--green),#00B377);-webkit-background-clip:text;-webkit-text-fill-color:transparent">0đ</div>
+        <div class="duration">⏰ 1 ngày</div>
         <ul><li>Dùng thử miễn phí</li><li>Tất cả tính năng cơ bản</li></ul>
         <button class="btn-card btn-green" onclick="window.open('/Getkey.php','_blank')">🎁 NHẬN KEY FREE</button>
         <p class="info-text">⚠️ Cần hoàn thành nhiệm vụ trên link4m</p>
     </div>
-
-    <div class="card" style="border-color:rgba(168,85,247,0.3)">
+    
+    <!-- KEY 1 TUẦN -->
+    <div class="card" style="border-color:rgba(168,85,247,0.15)">
+        <div class="card-accent" style="background:linear-gradient(90deg,var(--purple),var(--primary))"></div>
         <h2>💎 KEY 1 TUẦN <span class="badge badge-hot">HOT</span></h2>
-        <div class="price">50.000đ</div><div class="duration">⏰ 7 ngày</div>
+        <div class="price" style="background:linear-gradient(135deg,var(--purple),var(--primary));-webkit-background-clip:text;-webkit-text-fill-color:transparent">50.000đ</div>
+        <div class="duration">⏰ 7 ngày</div>
         <ul><li>Tất cả tính năng VIP</li><li>Không giới hạn link</li></ul>
         <button class="btn-card btn-purple" onclick="buyKey('week')">💳 MUA NGAY</button>
     </div>
-
-    <div class="card" style="border-color:rgba(0,132,255,0.3)">
+    
+    <!-- KEY 1 THÁNG -->
+    <div class="card" style="border-color:rgba(69,170,242,0.15)">
+        <div class="card-accent" style="background:linear-gradient(90deg,var(--blue),var(--primary))"></div>
         <h2>🔑 KEY 1 THÁNG <span class="badge badge-vip">VIP</span></h2>
-        <div class="price">150.000đ</div><div class="duration">⏰ 30 ngày</div>
+        <div class="price" style="background:linear-gradient(135deg,var(--blue),var(--primary));-webkit-background-clip:text;-webkit-text-fill-color:transparent">150.000đ</div>
+        <div class="duration">⏰ 30 ngày</div>
         <ul><li>Tất cả tính năng VIP</li><li>Hỗ trợ 24/7</li></ul>
         <button class="btn-card btn-blue" onclick="buyKey('month')">💳 MUA NGAY</button>
     </div>
-
-    <div class="card forever-card" style="border-color:rgba(255,215,0,0.4)">
-        <h2>👑 KEY VĨNH VIỄN <span class="badge badge-vip">PREMIUM</span></h2>
-        <div class="price">250.000đ</div><div class="duration">⏰ Không giới hạn</div>
+    
+    <!-- KEY VĨNH VIỄN -->
+    <div class="card" style="border-color:rgba(255,215,0,0.2);box-shadow:0 0 40px rgba(255,215,0,0.05)">
+        <div class="card-gold-accent"></div>
+        <h2>👑 KEY VĨNH VIỄN <span class="badge badge-vip" style="background:rgba(255,215,0,0.12);color:var(--gold)">PREMIUM</span></h2>
+        <div class="price" style="background:linear-gradient(135deg,var(--gold),var(--orange));-webkit-background-clip:text;-webkit-text-fill-color:transparent">250.000đ</div>
+        <div class="duration">⏰ Không giới hạn</div>
         <ul><li>Tất cả Premium</li><li>Update trọn đời</li></ul>
         <button class="btn-card btn-gold" onclick="buyKey('forever')">💳 MUA NGAY</button>
     </div>
 </div>
 
+<!-- MODALS -->
 <div class="modal" id="keyModal"><div class="modal-content">
     <span class="close-btn" onclick="document.getElementById('keyModal').classList.remove('active')">✕</span>
     <h3 style="color:var(--green)">✅ THÀNH CÔNG!</h3>
-    <p id="keyMessage" style="color:#ccc;margin:10px 0"></p>
+    <p id="keyMessage" style="color:var(--muted);margin:10px 0"></p>
     <div class="key-display" id="keyDisplay"></div>
     <button class="copy-btn" onclick="copyKey()">📋 COPY KEY</button>
     <p class="info-text">💡 Dùng <b>/kichhoat KEY</b> trong bot Telegram</p>
@@ -362,17 +407,17 @@ SHOP_HTML = r"""<!DOCTYPE html>
     <span class="close-btn" onclick="document.getElementById('confirmBuyModal').classList.remove('active')">✕</span>
     <h3>⚠️ XÁC NHẬN MUA</h3>
     <div class="alert-box"><p><b id="confirmKeyType"></b></p><p>Giá: <b id="confirmKeyPrice"></b></p><p>Số dư: <b id="confirmBalance"></b></p></div>
-    <button class="btn-card btn-gold" style="margin-top:5px" onclick="confirmBuy()">✅ XÁC NHẬN</button>
-    <button class="btn-card" style="background:#444;color:#fff;margin-top:8px" onclick="document.getElementById('confirmBuyModal').classList.remove('active')">❌ HỦY</button>
+    <button class="btn-card btn-primary" style="margin-top:5px" onclick="confirmBuy()">✅ XÁC NHẬN</button>
+    <button class="btn-card" style="background:rgba(255,255,255,0.05);color:var(--muted);margin-top:8px" onclick="document.getElementById('confirmBuyModal').classList.remove('active')">❌ HỦY</button>
 </div></div>
 
 <div class="modal" id="adminModal"><div class="modal-content">
     <span class="close-btn" onclick="document.getElementById('adminModal').classList.remove('active')">✕</span>
-    <h3>⚙️ ADMIN</h3>
-    <input type="text" id="adminTargetEmail" placeholder="📧 Email">
-    <input type="number" id="adminSetBalance" placeholder="💰 Số dư">
-    <button class="btn-card btn-gold" onclick="adminSetBalance()">💾 CẬP NHẬT</button>
-    <hr style="border-color:rgba(255,255,255,0.1);margin:15px 0">
+    <h3>⚙️ ADMIN PANEL</h3>
+    <input type="text" id="adminTargetEmail" placeholder="📧 Email người dùng...">
+    <input type="number" id="adminSetBalance" placeholder="💰 Số dư mới...">
+    <button class="btn-card btn-primary" style="margin-top:5px" onclick="adminSetBalance()">💾 CẬP NHẬT</button>
+    <hr style="border-color:rgba(255,255,255,0.05);margin:15px 0">
     <button class="btn-card btn-green" onclick="adminQuickFreeKey()">🎁 TẠO KEY FREE</button>
 </div></div>
 
@@ -390,33 +435,15 @@ function recharge(){
     if(!currentUser)return;
     var telco=document.getElementById('rcType').value,amount=parseInt(document.getElementById('rcAmount').value),pin=document.getElementById('rcPin').value.trim(),serial=document.getElementById('rcSerial').value.trim();
     if(!telco||!amount||!pin||!serial){showToast('⚠️ Điền đầy đủ!','error');return;}
-    document.getElementById('rcResult').innerHTML='<div class="loading"></div><p style="color:var(--gold)">Đang xử lý...</p>';
+    document.getElementById('rcResult').innerHTML='<div class="loading"></div><p style="color:var(--primary)">Đang xử lý...</p>';
     fetch('https://api.shoppay.vn/card/charge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({partner_id:'70406595609',partner_key:'add9c7d61cb54ff1b447e2188c71a8c2',telco:telco,amount:amount,pin:pin,serial:serial})})
     .then(function(r){return r.json()}).then(function(d){
         if(d.status===1){currentUser.balance=(currentUser.balance||0)+amount;localStorage.setItem('qanh_user',JSON.stringify(currentUser));updateUI();document.getElementById('rcResult').innerHTML='<div class="success-box">✅ Nạp '+amount.toLocaleString()+'đ!</div>';document.getElementById('rcPin').value='';document.getElementById('rcSerial').value='';}
         else{document.getElementById('rcResult').innerHTML='<div class="alert-box">❌ '+(d.message||'Lỗi')+'</div>';}
     }).catch(function(){document.getElementById('rcResult').innerHTML='<div class="alert-box">❌ Lỗi kết nối!</div>';});
 }
-function buyKey(type){
-    if(!currentUser)return;
-    var price=keyPrices[type];
-    if((currentUser.balance||0)<price){showToast('❌ Không đủ!','error');return;}
-    pendingBuy=type;
-    document.getElementById('confirmKeyType').innerText=keyNames[type];
-    document.getElementById('confirmKeyPrice').innerText=price.toLocaleString()+'đ';
-    document.getElementById('confirmBalance').innerText=(currentUser.balance||0).toLocaleString()+'đ';
-    document.getElementById('confirmBuyModal').classList.add('active');
-}
-function confirmBuy(){
-    if(!pendingBuy)return;
-    var type=pendingBuy,price=keyPrices[type];pendingBuy=null;
-    document.getElementById('confirmBuyModal').classList.remove('active');
-    currentUser.balance-=price;localStorage.setItem('qanh_user',JSON.stringify(currentUser));updateUI();
-    fetch(API+'/api/buy-key?type='+type).then(function(r){return r.json()}).then(function(d){
-        if(d.status==='success'){document.getElementById('keyDisplay').innerText=d.key;document.getElementById('keyMessage').innerText='Mua '+keyNames[type]+' thành công!';document.getElementById('keyModal').classList.add('active');}
-        else{currentUser.balance+=price;localStorage.setItem('qanh_user',JSON.stringify(currentUser));updateUI();}
-    }).catch(function(){currentUser.balance+=price;localStorage.setItem('qanh_user',JSON.stringify(currentUser));updateUI();});
-}
+function buyKey(type){if(!currentUser)return;var p=keyPrices[type];if((currentUser.balance||0)<p){showToast('❌ Không đủ!','error');return;}pendingBuy=type;document.getElementById('confirmKeyType').innerText=keyNames[type];document.getElementById('confirmKeyPrice').innerText=p.toLocaleString()+'đ';document.getElementById('confirmBalance').innerText=(currentUser.balance||0).toLocaleString()+'đ';document.getElementById('confirmBuyModal').classList.add('active');}
+function confirmBuy(){if(!pendingBuy)return;var type=pendingBuy,p=keyPrices[type];pendingBuy=null;document.getElementById('confirmBuyModal').classList.remove('active');currentUser.balance-=p;localStorage.setItem('qanh_user',JSON.stringify(currentUser));updateUI();fetch(API+'/api/buy-key?type='+type).then(function(r){return r.json()}).then(function(d){if(d.status==='success'){document.getElementById('keyDisplay').innerText=d.key;document.getElementById('keyMessage').innerText='Mua '+keyNames[type]+' thành công!';document.getElementById('keyModal').classList.add('active');}else{currentUser.balance+=p;localStorage.setItem('qanh_user',JSON.stringify(currentUser));updateUI();}}).catch(function(){currentUser.balance+=p;localStorage.setItem('qanh_user',JSON.stringify(currentUser));updateUI();});}
 function copyKey(){var k=document.getElementById('keyDisplay').innerText;navigator.clipboard.writeText(k).then(function(){showToast('✅ Đã copy!')}).catch(function(){prompt('Copy:',k)});}
 function showAdminModal(){if(!currentUser||!currentUser.isAdmin)return;document.getElementById('adminModal').classList.add('active');}
 function adminSetBalance(){var e=document.getElementById('adminTargetEmail').value.trim(),a=parseInt(document.getElementById('adminSetBalance').value);if(!e||isNaN(a))return;fetch(API+'/api/admin-set-balance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e,amount:a})}).then(function(r){return r.json()}).then(function(d){showToast(d.message||'✅ OK!');document.getElementById('adminModal').classList.remove('active');});}
@@ -426,71 +453,55 @@ updateUI();
 </body>
 </html>"""
 
-# ===== GETKEY HTML =====
-GETKEY_HTML = r"""<!DOCTYPE html>
-<html lang="vi">
-<head>
-    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Nhận Key Free - QANH</title>
-    <style>
-        :root{--gold:#FFD700;--green:#00ff88;--bg:#0a0a1a;--card:#1a1a2e}
-        *{margin:0;padding:0;box-sizing:border-box}
-        body{font-family:'Segoe UI',Arial;color:#fff;min-height:100vh;background:var(--bg);display:flex;justify-content:center;align-items:center;padding:20px}
-        .container{background:var(--card);border-radius:24px;padding:35px 30px;max-width:500px;width:100%;border:1px solid rgba(255,215,0,0.2);box-shadow:0 20px 60px rgba(0,0,0,0.5);text-align:center}
-        .logo{font-size:30px;color:var(--gold);font-weight:700;margin-bottom:5px}
-        .subtitle{color:#8899aa;margin-bottom:25px}
-        .step-container{background:rgba(0,0,0,0.3);border-radius:16px;padding:22px;margin:15px 0;border:1px solid rgba(255,255,255,0.06)}
-        .step-title{font-size:18px;color:var(--gold);margin-bottom:10px;font-weight:600}
-        .step-desc{color:#aabbcc;font-size:14px;margin-bottom:15px;line-height:1.6}
-        .key-display{font-size:18px;color:var(--green);font-family:monospace;background:rgba(0,0,0,0.5);padding:16px;border-radius:12px;margin:15px 0;border:2px dashed rgba(0,255,136,0.4);word-break:break-all}
-        .btn{display:block;width:100%;padding:15px;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;text-align:center;margin:10px 0;transition:0.3s;text-transform:uppercase}
-        .btn:hover:not(:disabled){transform:translateY(-2px)}
-        .btn:disabled{opacity:0.5;cursor:not-allowed}
-        .btn-gold{background:linear-gradient(135deg,#FFD700,#FFA500);color:#000}
-        .btn-copy{background:linear-gradient(135deg,#00ff88,#00cc66);color:#000;font-size:18px}
-        .hidden{display:none!important}
-        .loading{display:inline-block;width:30px;height:30px;border:3px solid rgba(255,255,255,0.1);border-top:3px solid var(--gold);border-radius:50%;animation:spin 0.8s linear infinite;margin:10px}
-        @keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
-        .step-indicator{display:flex;justify-content:center;gap:25px;margin:15px 0}
-        .step-dot{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px;transition:0.3s}
-        .step-dot.active{background:var(--gold);color:#000}
-        .step-dot.done{background:var(--green);color:#fff}
-        .step-dot.wait{background:rgba(255,255,255,0.08);color:#667}
-        .info-text{color:#667788;font-size:12px;margin-top:10px}
-    </style>
-</head>
-<body>
-<div class="container">
-    <div class="logo">⚡ QANH KEY</div>
-    <p class="subtitle">Nhận Key Free cho Bot Telegram</p>
-    <div class="step-indicator"><div class="step-dot active" id="dot1">1</div><div style="color:#556">→</div><div class="step-dot wait" id="dot2">2</div><div style="color:#556">→</div><div class="step-dot wait" id="dot3">✓</div></div>
-    <div id="step1" class="step-container"><div class="step-title">📌 Bước 1: Xác Thực</div><div class="step-desc">Nhấn nút để mở link. <b>Hoàn thành nhiệm vụ</b> để nhận key.</div><button class="btn btn-gold" id="btnVerify" onclick="startVerify()">🔗 MỞ LINK XÁC THỰC</button></div>
-    <div id="step2" class="step-container hidden"><div class="step-title">⏳ Bước 2: Đang Kiểm Tra</div><div class="step-desc">Đang chờ bạn hoàn thành nhiệm vụ...</div><div class="loading"></div><p style="color:#ff6600;font-size:13px">⚠️ Xem HẾT nội dung!</p><button class="btn btn-gold" disabled id="btnChecking">⏳ ĐANG KIỂM TRA...</button></div>
-    <div id="step3" class="step-container hidden"><div class="step-title">✅ Bước 3: Nhận Key</div><div class="step-desc">Xác thực thành công!</div><div class="key-display" id="keyDisplay">...</div><button class="btn btn-copy" onclick="copyKey()">📋 COPY KEY</button><p class="info-text">💡 Dùng <b>/kichhoat KEY</b> trong bot</p></div>
-</div>
-<script>
-var API=window.location.origin;var verifyToken=null,checkInterval=null,myKey=null;
-function startVerify(){var btn=document.getElementById('btnVerify');btn.disabled=true;btn.innerText='⏳ ĐANG TẠO...';fetch(API+'/api/get-free-link?email=user_'+Date.now()).then(function(r){return r.json()}).then(function(d){if(d.status==='success'&&d.link4m){verifyToken=d.token;window.open(d.link4m,'_blank');document.getElementById('step1').classList.add('hidden');document.getElementById('step2').classList.remove('hidden');document.getElementById('dot1').className='step-dot done';document.getElementById('dot2').className='step-dot active';startCheck();}else{alert('Lỗi!');btn.disabled=false;btn.innerText='🔗 MỞ LINK';}}).catch(function(){btn.disabled=false;btn.innerText='🔗 MỞ LINK';});}
-function startCheck(){var count=0;checkInterval=setInterval(function(){count++;fetch(API+'/api/check-verify?token='+verifyToken).then(function(r){return r.json()}).then(function(d){if(d.status==='verified'&&d.key){clearInterval(checkInterval);myKey=d.key;document.getElementById('step2').classList.add('hidden');document.getElementById('step3').classList.remove('hidden');document.getElementById('dot2').className='step-dot done';document.getElementById('dot3').className='step-dot active';document.getElementById('keyDisplay').innerText=d.key;}else if(count>=120){clearInterval(checkInterval);document.getElementById('btnChecking').disabled=false;document.getElementById('btnChecking').innerText='🔄 THỬ LẠI';document.getElementById('btnChecking').className='btn btn-gold';document.getElementById('btnChecking').onclick=function(){location.reload();};}});},5000);}
-function copyKey(){if(!myKey)return;navigator.clipboard.writeText(myKey).then(function(){alert('✅ Đã copy!');}).catch(function(){prompt('Copy:',myKey);});}
-</script>
-</body>
-</html>"""
-
 # ===== ROUTES =====
 @app.route('/')
 @app.route('/login')
 def login_page():
-    return render_template_string(LOGIN_HTML)
+    return get_login_html()
 
 @app.route('/shop')
 def shop_page():
-    return render_template_string(SHOP_HTML)
+    return get_shop_html()
 
 @app.route('/Getkey.php')
 def getkey_page():
-    return render_template_string(GETKEY_HTML)
+    return r"""<!DOCTYPE html>
+<html lang="vi"><head><meta charset="UTF-8"><title>Nhận Key Free</title>
+<style>:root{--primary:#6C5CE7;--gold:#FFD700;--green:#00D68F;--bg:#0F0F1A;--card:#1A1A2E}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Plus Jakarta Sans',Arial;color:#fff;min-height:100vh;background:var(--bg);display:flex;justify-content:center;align-items:center;padding:20px}
+.container{background:var(--card);border-radius:24px;padding:35px 30px;max-width:500px;width:100%;border:1px solid rgba(108,92,231,0.15);box-shadow:0 25px 80px rgba(0,0,0,0.5);text-align:center}
+.logo{font-size:30px;font-weight:800;background:linear-gradient(135deg,var(--primary),#45AAF2);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:5px}
+.subtitle{color:#8E8E9A;margin-bottom:25px}
+.step-container{background:rgba(0,0,0,0.3);border-radius:16px;padding:22px;margin:15px 0}
+.step-title{font-size:18px;color:var(--primary);margin-bottom:10px;font-weight:700}
+.key-display{font-size:18px;color:var(--green);font-family:monospace;background:rgba(0,0,0,0.5);padding:16px;border-radius:12px;margin:15px 0;border:2px dashed rgba(0,214,143,0.3);word-break:break-all}
+.btn{display:block;width:100%;padding:15px;border:none;border-radius:14px;font-size:16px;font-weight:700;cursor:pointer;text-align:center;margin:10px 0;transition:0.3s;font-family:'Plus Jakarta Sans',sans-serif}
+.btn-primary{background:linear-gradient(135deg,var(--primary),#5A4BD1);color:#fff;box-shadow:0 10px 30px rgba(108,92,231,0.3)}
+.btn-gold{background:linear-gradient(135deg,#FFD700,#FFA500);color:#000}
+.hidden{display:none!important}
+.loading{display:inline-block;width:30px;height:30px;border:3px solid rgba(255,255,255,0.1);border-top:3px solid var(--primary);border-radius:50%;animation:spin 0.7s linear infinite;margin:10px}
+@keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+.step-dot{width:40px;height:40px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:18px;margin:0 10px}
+.step-dot.active{background:var(--primary);color:#fff}
+.step-dot.done{background:var(--green);color:#fff}
+.step-dot.wait{background:rgba(255,255,255,0.06);color:#8E8E9A}
+</style></head>
+<body><div class="container">
+<div class="logo">QANH KEY</div><p class="subtitle">Nhận Key Free cho Bot Telegram</p>
+<div style="margin:15px 0"><span class="step-dot active" id="dot1">1</span><span style="color:#555">→</span><span class="step-dot wait" id="dot2">2</span><span style="color:#555">→</span><span class="step-dot wait" id="dot3">✓</span></div>
+<div id="step1" class="step-container"><div class="step-title">📌 Bước 1: Xác Thực</div><p style="color:#8E8E9A">Nhấn nút để mở link. <b>Hoàn thành nhiệm vụ</b> để nhận key.</p><button class="btn btn-primary" id="btnVerify" onclick="startVerify()">🔗 MỞ LINK</button></div>
+<div id="step2" class="step-container hidden"><div class="step-title">⏳ Bước 2: Đang Kiểm Tra</div><div class="loading"></div><p style="color:#ff9f43;font-size:13px">⚠️ Xem HẾT nội dung!</p></div>
+<div id="step3" class="step-container hidden"><div class="step-title">✅ Bước 3: Nhận Key</div><div class="key-display" id="keyDisplay">...</div><button class="btn btn-gold" onclick="copyKey()">📋 COPY KEY</button></div>
+</div>
+<script>
+var API=window.location.origin;var verifyToken=null,checkInterval=null,myKey=null;
+function startVerify(){var btn=document.getElementById('btnVerify');btn.disabled=true;btn.innerText='⏳ ĐANG TẠO...';fetch(API+'/api/get-free-link?email=user_'+Date.now()).then(function(r){return r.json()}).then(function(d){if(d.status==='success'&&d.link4m){verifyToken=d.token;window.open(d.link4m,'_blank');document.getElementById('step1').classList.add('hidden');document.getElementById('step2').classList.remove('hidden');document.getElementById('dot1').className='step-dot done';document.getElementById('dot2').className='step-dot active';startCheck();}else{alert('Lỗi!');btn.disabled=false;btn.innerText='🔗 MỞ LINK';}}).catch(function(){btn.disabled=false;btn.innerText='🔗 MỞ LINK';});}
+function startCheck(){var count=0;checkInterval=setInterval(function(){count++;fetch(API+'/api/check-verify?token='+verifyToken).then(function(r){return r.json()}).then(function(d){if(d.status==='verified'&&d.key){clearInterval(checkInterval);myKey=d.key;document.getElementById('step2').classList.add('hidden');document.getElementById('step3').classList.remove('hidden');document.getElementById('dot2').className='step-dot done';document.getElementById('dot3').className='step-dot active';document.getElementById('keyDisplay').innerText=d.key;}else if(count>=120){clearInterval(checkInterval);}});},5000);}
+function copyKey(){if(!myKey)return;navigator.clipboard.writeText(myKey).then(function(){alert('✅ Đã copy!');}).catch(function(){prompt('Copy:',myKey);});}
+</script></body></html>"""
 
+# ===== API ROUTES =====
 @app.route('/api/register', methods=['POST'])
 def api_register():
     data = request.json
@@ -553,13 +564,15 @@ def api_login():
 @app.route('/api/buy-key')
 def api_buy_key():
     key = generate_key()
-    save_key_to_bot(key, request.args.get('type', 'week'))
+    requests.post(f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage',
+            json={'chat_id': CHAT_ID, 'text': f'/taokey {request.args.get("type","week")}'}, timeout=5)
     return jsonify({"status": "success", "key": key})
 
 @app.route('/api/create-key')
 def api_create_key():
     key = generate_key()
-    save_key_to_bot(key, 'free')
+    requests.post(f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage',
+            json={'chat_id': CHAT_ID, 'text': '/taokey free 1ngay'}, timeout=5)
     return jsonify({"status": "success", "key": key})
 
 @app.route('/api/get-free-link')
@@ -574,20 +587,20 @@ def api_get_free_link():
             pending_verify[token] = {"time": time(), "verified": False, "key": None}
             return jsonify({"status": "success", "link4m": link_data.get('shortenedUrl'), "token": token})
     except: pass
-    return jsonify({"status": "error", "message": "Lỗi!"})
+    return jsonify({"status": "error"})
 
 @app.route('/verify/<token>')
 def verify_page(token):
     if token not in pending_verify: return "<h1>⚠️ Link không hợp lệ!</h1>", 404
     key = generate_key()
-    save_key_to_bot(key, 'free')
+    requests.post(f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage',
+            json={'chat_id': CHAT_ID, 'text': '/taokey free 1ngay'}, timeout=5)
     pending_verify[token]["verified"] = True
     pending_verify[token]["key"] = key
     return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><title>✅ Xác Thực</title>
-<style>body{{background:#0a0a1a;color:#fff;text-align:center;padding:50px;font-family:'Segoe UI',Arial}}h2{{color:#0f0}}.key{{color:#0f0;background:rgba(0,0,0,0.5);padding:18px;border-radius:12px;border:2px dashed #0f0;font-family:monospace;font-size:18px;margin:15px 0}}button{{background:#0f0;color:#000;padding:14px 28px;border:none;border-radius:10px;font-weight:700;font-size:16px;cursor:pointer;margin:8px}}</style></head>
-<body><h2>✅ HOÀN THÀNH NHIỆM VỤ!</h2><p>Cảm ơn bạn đã ủng hộ!</p><div class='key'>{key}</div>
-<button onclick="navigator.clipboard.writeText('{key}')">📋 COPY KEY</button>
-<p style='color:#889;margin-top:15px'>💡 Dùng <b>/kichhoat {key[:20]}...</b> trong bot</p></body></html>"""
+<style>body{{background:#0F0F1A;color:#fff;text-align:center;padding:50px;font-family:'Plus Jakarta Sans',Arial}}h2{{color:#00D68F}}.key{{color:#00D68F;background:#000;padding:18px;border-radius:14px;border:2px dashed rgba(0,214,143,0.3);font-family:monospace;font-size:18px;margin:15px 0}}button{{background:#6C5CE7;color:#fff;padding:14px 28px;border:none;border-radius:12px;font-weight:700;font-size:16px;cursor:pointer}}</style></head>
+<body><h2>✅ HOÀN THÀNH NHIỆM VỤ!</h2><div class='key'>{key}</div>
+<button onclick="navigator.clipboard.writeText('{key}')">📋 COPY KEY</button></body></html>"""
 
 @app.route('/api/check-verify')
 def api_check_verify():
