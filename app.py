@@ -20,10 +20,40 @@ RENDER_URL = "https://qanhxzenshop.onrender.com"
 EMAIL_SENDER = "qanhxzenshopfeedback@gmail.com"
 EMAIL_PASSWORD = "lmyj wgyp tfzo qxkj"
 
-pending_registrations = {}
-pending_verify = {}
-users_db = {}
-key_storage = {}  # Lưu key cho user
+# ===== DATABASE FILES =====
+USERS_FILE = "/tmp/users_db.json"
+KEYS_FILE = "/tmp/keys_db.json"
+TRANSACTIONS_FILE = "/tmp/transactions_db.json"
+PENDING_FILE = "/tmp/pending_db.json"
+VERIFY_FILE = "/tmp/verify_db.json"
+
+def load_json(filename, default={}):
+    try:
+        if os.path.exists(filename):
+            with open(filename, 'r') as f:
+                return json.load(f)
+    except: pass
+    return default
+
+def save_json(filename, data):
+    try:
+        with open(filename, 'w') as f:
+            json.dump(data, f, ensure_ascii=False)
+    except: pass
+
+# Load data từ file
+users_db = load_json(USERS_FILE, {})
+keys_db = load_json(KEYS_FILE, {"free_keys": {}, "licenses": {}, "used_keys": {}, "keys_history": []})
+transactions_db = load_json(TRANSACTIONS_FILE, [])
+pending_registrations = load_json(PENDING_FILE, {})
+pending_verify = load_json(VERIFY_FILE, {})
+
+def save_all_data():
+    save_json(USERS_FILE, users_db)
+    save_json(KEYS_FILE, keys_db)
+    save_json(TRANSACTIONS_FILE, transactions_db)
+    save_json(PENDING_FILE, pending_registrations)
+    save_json(VERIFY_FILE, pending_verify)
 
 def generate_key():
     c = string.ascii_uppercase + string.digits
@@ -33,13 +63,80 @@ def generate_key():
 def generate_verify_code():
     return ''.join([str(rnd.randint(0, 9)) for _ in range(6)])
 
-def save_key_to_bot(key, key_type):
+def save_key_local(key, key_type, email=""):
+    """LƯU KEY VÀO DATABASE CỦA WEB"""
+    today = datetime.now().strftime("%Y-%m-%d")
+    if key_type in ['free', 'free_verified']:
+        expire = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+        keys_db.setdefault("free_keys", {})[key] = {
+            "created_by": OWNER_ID,
+            "expire": expire,
+            "email": email,
+            "date": today,
+            "verified": True,
+            "created_at": datetime.now().isoformat()
+        }
+    elif key_type == 'week':
+        expire = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
+        keys_db.setdefault("licenses", {})[key] = {
+            "created_by": OWNER_ID,
+            "expire_date": expire,
+            "email": email,
+            "created_at": datetime.now().isoformat()
+        }
+    elif key_type == 'month':
+        expire = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+        keys_db.setdefault("licenses", {})[key] = {
+            "created_by": OWNER_ID,
+            "expire_date": expire,
+            "email": email,
+            "created_at": datetime.now().isoformat()
+        }
+    elif key_type == 'forever':
+        keys_db.setdefault("licenses", {})[key] = {
+            "created_by": OWNER_ID,
+            "expire_date": None,
+            "email": email,
+            "created_at": datetime.now().isoformat()
+        }
+    
+    keys_db.setdefault("keys_history", []).append({
+        "key": key,
+        "type": key_type,
+        "email": email,
+        "created_at": datetime.now().isoformat()
+    })
+    save_all_data()
+
+def save_transaction(email, trans_type, amount, key="", status="success"):
+    """LƯU LỊCH SỬ GIAO DỊCH"""
+    transactions_db.append({
+        "email": email,
+        "type": trans_type,
+        "amount": amount,
+        "key": key,
+        "status": status,
+        "time": datetime.now().isoformat()
+    })
+    if len(transactions_db) > 1000:
+        transactions_db.pop(0)
+    save_all_data()
+
+def send_key_to_bot(key, key_type):
+    """Gửi lệnh /taokey cho bot Telegram để bot lưu key"""
     try:
         cmds = {'free': 'free 1ngay', 'week': '1w', 'month': 'vip 1thang', 'forever': 'vip vinhvien'}
-        requests.post(f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage',
-                json={'chat_id': CHAT_ID, 'text': f'/taokey {cmds.get(key_type, "free 1ngay")}'}, timeout=5)
+        cmd = cmds.get(key_type, 'free 1ngay')
+        res = requests.post(
+            f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage',
+            json={'chat_id': CHAT_ID, 'text': f'/taokey {cmd}'},
+            timeout=10
+        )
+        print(f"Bot taokey response: {res.json()}")
         return True
-    except: return False
+    except Exception as e:
+        print(f"Send key to bot error: {e}")
+        return False
 
 def send_verification_email(to_email, code):
     try:
@@ -64,32 +161,7 @@ def send_verification_email(to_email, code):
         return True
     except: return False
 
-def check_link4m_earnings(token):
-    """Kiểm tra link4m có tăng tiền thật không"""
-    try:
-        # Gọi API link4m để check earnings
-        check_url = f"https://link4m.co/api/v2/check?api={LINK4M_API_KEY}&token={token}"
-        res = requests.get(check_url, timeout=10)
-        data = res.json()
-        if data.get('status') == 'success' and data.get('earned', 0) > 0:
-            return True, data.get('earned', 0)
-        return False, 0
-    except:
-        # Nếu không check được API, kiểm tra thời gian
-        if token in pending_verify:
-            elapsed = time() - pending_verify[token].get("time", 0)
-            if elapsed >= 20:  # Đợi ít nhất 20 giây
-                return True, 0
-        return False, 0
-
-def is_vip_user(email):
-    """Kiểm tra user có phải VIP không"""
-    if email in users_db:
-        return users_db[email].get("isVip", False)
-    return False
-
 # ===== UI TEMPLATES =====
-
 def get_login_html():
     return r"""<!DOCTYPE html>
 <html lang="vi">
@@ -109,34 +181,31 @@ def get_login_html():
         @keyframes float1{0%,100%{transform:translate(0,0)rotate(0deg)}50%{transform:translate(50px,-50px)rotate(10deg)}}
         @keyframes float2{0%,100%{transform:translate(0,0)rotate(0deg)}50%{transform:translate(-40px,40px)rotate(-10deg)}}
         @keyframes float3{0%,100%{transform:translate(0,0)scale(1)}50%{transform:translate(-30px,-30px)scale(1.2)}}
-        .container{position:relative;z-index:1;background:var(--card);border-radius:28px;padding:45px 35px;max-width:440px;width:100%;border:1px solid rgba(255,255,255,0.06);box-shadow:0 25px 80px rgba(0,0,0,0.5);animation:slideUp 0.6s cubic-bezier(0.16,1,0.3,1)}
+        .container{position:relative;z-index:1;background:var(--card);border-radius:28px;padding:45px 35px;max-width:440px;width:100%;border:1px solid rgba(255,255,255,0.06);box-shadow:0 25px 80px rgba(0,0,0,0.5);animation:slideUp 0.6s}
         @keyframes slideUp{from{opacity:0;transform:translateY(40px)}to{opacity:1;transform:translateY(0)}}
         .logo-icon{width:65px;height:65px;background:linear-gradient(135deg,var(--primary),var(--primary-dark));border-radius:20px;display:flex;align-items:center;justify-content:center;font-size:32px;margin:0 auto 20px;box-shadow:0 15px 35px rgba(108,92,231,0.3)}
-        .title{font-size:26px;font-weight:800;color:#fff;text-align:center;margin-bottom:5px;letter-spacing:-0.5px}
-        .subtitle{color:var(--muted);text-align:center;margin-bottom:30px;font-size:14px;font-weight:400}
+        .title{font-size:26px;font-weight:800;color:#fff;text-align:center;margin-bottom:5px}
+        .subtitle{color:var(--muted);text-align:center;margin-bottom:30px;font-size:14px}
         .input-group{margin-bottom:18px}
         .input-group label{display:block;color:var(--muted);margin-bottom:8px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:1.5px}
-        .input-wrapper{position:relative}
         .input-wrapper input{width:100%;padding:15px 18px;border-radius:14px;border:2px solid rgba(255,255,255,0.06);background:var(--card2);color:#fff;font-size:15px;font-weight:500;transition:0.3s;font-family:'Plus Jakarta Sans',sans-serif}
         .input-wrapper input:focus{border-color:var(--primary);outline:none;box-shadow:0 0 20px rgba(108,92,231,0.15);background:#1E1E3A}
-        .input-wrapper input::placeholder{color:#555}
         .captcha-box{background:rgba(108,92,231,0.04);border:1px dashed rgba(108,92,231,0.2);border-radius:14px;padding:18px;text-align:center;margin:18px 0}
         .captcha-text{font-size:30px;font-weight:800;background:linear-gradient(135deg,var(--primary),var(--blue));-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:6px;margin:8px 0;user-select:none}
         .captcha-box input{width:100%;padding:12px;border-radius:10px;border:2px solid rgba(255,255,255,0.08);background:#000;color:#fff;text-align:center;font-size:18px;letter-spacing:5px;font-weight:600}
-        .captcha-box input:focus{border-color:var(--primary);outline:none}
-        .refresh-link{color:var(--blue);cursor:pointer;font-size:12px;margin-top:8px;display:inline-block;font-weight:500}
-        .btn{display:block;width:100%;padding:16px;border:none;border-radius:14px;font-size:16px;font-weight:700;cursor:pointer;text-align:center;transition:0.3s;font-family:'Plus Jakarta Sans',sans-serif;letter-spacing:0.5px}
+        .refresh-link{color:var(--blue);cursor:pointer;font-size:12px;margin-top:8px;display:inline-block}
+        .btn{display:block;width:100%;padding:16px;border:none;border-radius:14px;font-size:16px;font-weight:700;cursor:pointer;text-align:center;transition:0.3s;font-family:'Plus Jakarta Sans',sans-serif}
         .btn-primary{background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:#fff;box-shadow:0 10px 30px rgba(108,92,231,0.35)}
         .btn-primary:hover{transform:translateY(-2px);box-shadow:0 15px 40px rgba(108,92,231,0.45)}
         .btn-primary:disabled{opacity:0.5;cursor:not-allowed;transform:none}
         .link-text{color:var(--muted);text-align:center;margin-top:22px;font-size:14px}
         .link-text a{color:var(--primary);cursor:pointer;text-decoration:none;font-weight:600}
         .alert{background:rgba(255,107,107,0.08);border:1px solid rgba(255,107,107,0.2);border-radius:12px;padding:12px;margin:10px 0;color:var(--red);font-size:13px;text-align:center}
-        .success-box{background:rgba(0,214,143,0.08);border:1px solid rgba(0,214,143,0.2);border-radius:12px;padding:12px;margin:10px 0;color:var(--green);font-size:13px;text-align:center}
+        .success-box{background:rgba(0,214,143,0.08);border:1px solid rgba(0,214,143,0.2);border-radius:12px;padding:12px;margin:10px 0;color:var(--green);font-size:13px}
         .hidden{display:none!important}
         .loading{display:inline-block;width:20px;height:20px;border:2px solid rgba(255,255,255,0.2);border-top:2px solid #fff;border-radius:50%;animation:spin 0.7s linear infinite;margin-right:8px;vertical-align:middle}
         @keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
-        .timer-text{color:#ff9f43;font-size:13px;text-align:center;margin-top:10px;font-weight:500}
+        .timer-text{color:#ff9f43;font-size:13px;text-align:center;margin-top:10px}
     </style>
 </head>
 <body>
@@ -215,9 +284,8 @@ def get_shop_html():
         *{margin:0;padding:0;box-sizing:border-box}
         body{font-family:'Plus Jakarta Sans',Arial,sans-serif;color:var(--text);min-height:100vh;background:var(--bg)}
         .navbar{position:sticky;top:0;z-index:100;background:rgba(15,15,26,0.85);backdrop-filter:blur(25px);padding:15px 20px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(108,92,231,0.15);flex-wrap:wrap;gap:10px}
-        .navbar .logo{font-size:22px;font-weight:800;background:linear-gradient(135deg,var(--primary),var(--blue));-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:-0.5px}
+        .navbar .logo{font-size:22px;font-weight:800;background:linear-gradient(135deg,var(--primary),var(--blue));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
         .navbar .user-info{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-        .navbar .badge-vip{background:linear-gradient(135deg,var(--gold),var(--orange));color:#000;padding:4px 12px;border-radius:20px;font-size:10px;font-weight:700;text-transform:uppercase}
         .navbar .balance{background:rgba(108,92,231,0.08);border:1px solid rgba(108,92,231,0.25);border-radius:30px;padding:8px 16px;color:var(--primary);font-weight:600;cursor:pointer;font-size:13px;transition:0.3s}
         .navbar .balance:hover{background:rgba(108,92,231,0.15)}
         .navbar .btn-nav{background:var(--primary);color:#fff;border:none;border-radius:30px;padding:9px 20px;font-weight:600;cursor:pointer;font-size:13px;transition:0.3s;font-family:'Plus Jakarta Sans',sans-serif}
@@ -227,12 +295,12 @@ def get_shop_html():
         .card{background:var(--card);border-radius:20px;padding:25px;margin-bottom:20px;border:1px solid rgba(255,255,255,0.04);transition:0.3s;position:relative;overflow:hidden}
         .card:hover{border-color:rgba(108,92,231,0.2);transform:translateY(-2px);box-shadow:0 20px 50px rgba(0,0,0,0.4)}
         .card h2{color:#fff;margin-bottom:8px;font-size:18px;font-weight:700;display:flex;align-items:center;gap:10px}
-        .card .price{font-size:38px;font-weight:800;background:linear-gradient(135deg,var(--primary),var(--blue));-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:-1px}
-        .card .duration{color:var(--muted);margin:3px 0;font-size:13px;font-weight:500}
+        .card .price{font-size:38px;font-weight:800;background:linear-gradient(135deg,var(--primary),var(--blue));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+        .card .duration{color:var(--muted);margin:3px 0;font-size:13px}
         .card ul{list-style:none;margin:12px 0}
-        .card ul li{padding:5px 0;color:var(--muted);font-size:13px;font-weight:500}
+        .card ul li{padding:5px 0;color:var(--muted);font-size:13px}
         .card ul li::before{content:"✦ ";color:var(--primary)}
-        .btn-card{display:block;width:100%;padding:15px;border:none;border-radius:14px;font-size:15px;font-weight:700;cursor:pointer;text-align:center;margin-top:12px;transition:0.3s;font-family:'Plus Jakarta Sans',sans-serif;letter-spacing:0.3px}
+        .btn-card{display:block;width:100%;padding:15px;border:none;border-radius:14px;font-size:15px;font-weight:700;cursor:pointer;text-align:center;margin-top:12px;transition:0.3s;font-family:'Plus Jakarta Sans',sans-serif}
         .btn-card:hover{transform:translateY(-2px)}
         .btn-card:disabled{opacity:0.5;cursor:not-allowed;transform:none}
         .btn-green{background:linear-gradient(135deg,#00D68F,#00B377);color:#fff;box-shadow:0 8px 25px rgba(0,214,143,0.25)}
@@ -246,8 +314,7 @@ def get_shop_html():
         .badge-vip-card{background:rgba(108,92,231,0.12);color:var(--primary)}
         .badge-hot{background:rgba(255,159,67,0.12);color:var(--orange);animation:pulse 2s infinite}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
-        .vip-locked{opacity:0.5;pointer-events:none;filter:grayscale(30%)}
-        .vip-locked::after{content:"🔒 VIP";position:absolute;top:10px;right:10px;background:var(--gold);color:#000;padding:4px 10px;border-radius:10px;font-size:10px;font-weight:700}
+        .section-title{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:2px;margin:25px 0 10px;text-align:center}
         select,input[type="text"],input[type="number"]{width:100%;padding:14px 16px;margin:7px 0;border-radius:12px;border:2px solid rgba(255,255,255,0.05);background:var(--card2);color:#fff;font-size:14px;font-weight:500;font-family:'Plus Jakarta Sans',sans-serif;transition:0.3s}
         select:focus,input:focus{border-color:var(--primary);outline:none;box-shadow:0 0 15px rgba(108,92,231,0.1)}
         select option{background:var(--card);color:#fff}
@@ -255,32 +322,34 @@ def get_shop_html():
         .card-gold-accent{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--gold),var(--orange));border-radius:20px 20px 0 0}
         .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:1000;justify-content:center;align-items:center;backdrop-filter:blur(5px)}
         .modal.active{display:flex}
-        .modal-content{background:var(--card);border-radius:24px;padding:30px;width:90%;max-width:440px;text-align:center;max-height:85vh;overflow-y:auto;border:1px solid rgba(255,255,255,0.06);box-shadow:0 30px 80px rgba(0,0,0,0.6);animation:modalIn 0.3s cubic-bezier(0.16,1,0.3,1)}
+        .modal-content{background:var(--card);border-radius:24px;padding:30px;width:90%;max-width:440px;text-align:center;max-height:85vh;overflow-y:auto;border:1px solid rgba(255,255,255,0.06);box-shadow:0 30px 80px rgba(0,0,0,0.6);animation:modalIn 0.3s}
         @keyframes modalIn{from{opacity:0;transform:scale(0.9)translateY(30px)}to{opacity:1;transform:scale(1)translateY(0)}}
         .modal-content h3{font-size:22px;font-weight:700;margin-bottom:15px}
-        .close-btn{float:right;color:var(--muted);font-size:24px;cursor:pointer;background:none;border:none;transition:0.3s}
+        .close-btn{float:right;color:var(--muted);font-size:24px;cursor:pointer;background:none;border:none}
         .close-btn:hover{color:#fff}
-        .key-display{font-size:15px;color:var(--green);font-family:'Courier New',monospace;background:rgba(0,0,0,0.5);padding:18px;border-radius:14px;margin:15px 0;word-break:break-all;border:2px dashed rgba(0,214,143,0.3);letter-spacing:0.5px}
+        .key-display{font-size:15px;color:var(--green);font-family:'Courier New',monospace;background:rgba(0,0,0,0.5);padding:18px;border-radius:14px;margin:15px 0;word-break:break-all;border:2px dashed rgba(0,214,143,0.3)}
         .copy-btn{background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:#fff;border:none;padding:14px;border-radius:14px;cursor:pointer;font-weight:700;font-size:15px;width:100%;margin-top:10px;font-family:'Plus Jakarta Sans',sans-serif;transition:0.3s}
         .copy-btn:hover{transform:translateY(-2px)}
         .alert-box{background:rgba(255,107,107,0.06);border:1px solid rgba(255,107,107,0.2);border-radius:14px;padding:14px;margin:10px 0;color:var(--red);font-size:13px}
         .success-box{background:rgba(0,214,143,0.06);border:1px solid rgba(0,214,143,0.2);border-radius:14px;padding:14px;margin:10px 0;color:var(--green);font-size:13px}
         .loading{display:inline-block;width:24px;height:24px;border:3px solid rgba(255,255,255,0.1);border-top:3px solid var(--primary);border-radius:50%;animation:spin 0.7s linear infinite;margin:10px auto}
         @keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
-        .toast{position:fixed;top:20px;right:20px;z-index:10000;padding:14px 22px;border-radius:14px;color:#fff;font-weight:600;font-size:14px;animation:slideIn 0.4s cubic-bezier(0.16,1,0.3,1);box-shadow:0 10px 40px rgba(0,0,0,0.5);font-family:'Plus Jakarta Sans',sans-serif}
+        .toast{position:fixed;top:20px;right:20px;z-index:10000;padding:14px 22px;border-radius:14px;color:#fff;font-weight:600;font-size:14px;animation:slideIn 0.4s;box-shadow:0 10px 40px rgba(0,0,0,0.5);font-family:'Plus Jakarta Sans',sans-serif}
         .toast-success{background:var(--green);color:#000}
         .toast-error{background:var(--red)}
         @keyframes slideIn{from{transform:translateX(120%)}to{transform:translateX(0)}}
-        .info-text{color:var(--muted);font-size:12px;margin-top:8px;text-align:center;font-weight:500}
+        .info-text{color:var(--muted);font-size:12px;margin-top:8px;text-align:center}
         .hidden{display:none!important}
-        .section-title{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:2px;margin:25px 0 10px;text-align:center}
+        .history-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:10px}
+        .history-table th{background:rgba(108,92,231,0.2);color:var(--primary);padding:10px;text-align:center;font-weight:600}
+        .history-table td{padding:10px;border-bottom:1px solid rgba(255,255,255,0.05);text-align:center;color:var(--muted)}
+        .history-table tr:hover{background:rgba(108,92,231,0.05)}
     </style>
 </head>
 <body>
 <div class="navbar">
     <div class="logo">QANH SHOP</div>
     <div class="user-info">
-        <span id="vipBadge"></span>
         <span class="balance" id="balanceDisplay" onclick="document.getElementById('rechargeSection').scrollIntoView({behavior:'smooth'})">💰 0đ</span>
         <button class="btn-nav" id="userBtn" onclick="logout()">👤 TÀI KHOẢN</button>
         <button class="btn-nav btn-admin hidden" id="adminBtn" onclick="showAdminModal()">⚙️ ADMIN</button>
@@ -289,8 +358,7 @@ def get_shop_html():
 
 <div class="container">
     <!-- NẠP TIỀN -->
-    <div class="card" id="rechargeSection">
-        <div class="card-accent"></div>
+    <div class="card" id="rechargeSection"><div class="card-accent"></div>
         <h2>💳 Nạp Tiền Vào Tài Khoản</h2>
         <select id="rcType"><option value="">Chọn nhà mạng</option><option value="VIETTEL">📱 Viettel</option><option value="MOBIFONE">📱 Mobifone</option><option value="VINAPHONE">📱 Vinaphone</option></select>
         <select id="rcAmount"><option value="">Chọn mệnh giá</option><option value="10000">10.000đ</option><option value="20000">20.000đ</option><option value="50000">50.000đ</option><option value="100000">100.000đ</option><option value="200000">200.000đ</option><option value="500000">500.000đ</option></select>
@@ -300,10 +368,9 @@ def get_shop_html():
         <div id="rcResult" style="margin-top:12px;text-align:center"></div>
     </div>
     
-    <!-- PHẦN MIỄN PHÍ -->
+    <!-- MIỄN PHÍ -->
     <div class="section-title">🎁 GÓI MIỄN PHÍ</div>
-    <div class="card" style="border-color:rgba(0,214,143,0.15)">
-        <div class="card-accent" style="background:linear-gradient(90deg,var(--green),var(--blue))"></div>
+    <div class="card" style="border-color:rgba(0,214,143,0.15)"><div class="card-accent" style="background:linear-gradient(90deg,var(--green),var(--blue))"></div>
         <h2>🆓 KEY FREE <span class="badge badge-free">MIỄN PHÍ</span></h2>
         <div class="price" style="background:linear-gradient(135deg,var(--green),#00B377);-webkit-background-clip:text;-webkit-text-fill-color:transparent">0đ</div>
         <div class="duration">⏰ 1 ngày</div>
@@ -311,33 +378,39 @@ def get_shop_html():
         <button class="btn-card btn-green" onclick="window.open('/Getkey.php','_blank')">🎁 NHẬN KEY FREE</button>
     </div>
     
-    <!-- PHẦN VIP -->
+    <!-- VIP -->
     <div class="section-title">👑 GÓI VIP</div>
-    <div class="card" style="border-color:rgba(168,85,247,0.15)" id="weekCard">
-        <div class="card-accent" style="background:linear-gradient(90deg,var(--purple),var(--primary))"></div>
+    <div class="card" style="border-color:rgba(168,85,247,0.15)"><div class="card-accent" style="background:linear-gradient(90deg,var(--purple),var(--primary))"></div>
         <h2>💎 KEY 1 TUẦN <span class="badge badge-hot">HOT</span></h2>
         <div class="price" style="background:linear-gradient(135deg,var(--purple),var(--primary));-webkit-background-clip:text;-webkit-text-fill-color:transparent">50.000đ</div>
         <div class="duration">⏰ 7 ngày</div>
         <ul><li>Tất cả tính năng VIP</li><li>Không giới hạn link</li><li>Tốc độ ưu tiên</li></ul>
         <button class="btn-card btn-purple" onclick="buyKey('week')">💳 MUA NGAY</button>
     </div>
-    
-    <div class="card" style="border-color:rgba(69,170,242,0.15)" id="monthCard">
-        <div class="card-accent" style="background:linear-gradient(90deg,var(--blue),var(--primary))"></div>
+    <div class="card" style="border-color:rgba(69,170,242,0.15)"><div class="card-accent" style="background:linear-gradient(90deg,var(--blue),var(--primary))"></div>
         <h2>🔑 KEY 1 THÁNG <span class="badge badge-vip-card">VIP</span></h2>
         <div class="price" style="background:linear-gradient(135deg,var(--blue),var(--primary));-webkit-background-clip:text;-webkit-text-fill-color:transparent">150.000đ</div>
         <div class="duration">⏰ 30 ngày</div>
         <ul><li>Tất cả tính năng VIP</li><li>Hỗ trợ 24/7</li><li>Ưu tiên xử lý</li></ul>
         <button class="btn-card btn-blue" onclick="buyKey('month')">💳 MUA NGAY</button>
     </div>
-    
-    <div class="card" style="border-color:rgba(255,215,0,0.2);box-shadow:0 0 40px rgba(255,215,0,0.05)" id="foreverCard">
-        <div class="card-gold-accent"></div>
+    <div class="card" style="border-color:rgba(255,215,0,0.2);box-shadow:0 0 40px rgba(255,215,0,0.05)"><div class="card-gold-accent"></div>
         <h2>👑 KEY VĨNH VIỄN <span class="badge badge-vip-card" style="background:rgba(255,215,0,0.12);color:var(--gold)">PREMIUM</span></h2>
         <div class="price" style="background:linear-gradient(135deg,var(--gold),var(--orange));-webkit-background-clip:text;-webkit-text-fill-color:transparent">250.000đ</div>
         <div class="duration">⏰ Không giới hạn</div>
         <ul><li>Tất cả Premium</li><li>Update trọn đời</li><li>Hỗ trợ VIP 24/7</li></ul>
         <button class="btn-card btn-gold" onclick="buyKey('forever')">💳 MUA NGAY</button>
+    </div>
+    
+    <!-- LỊCH SỬ GIAO DỊCH -->
+    <div class="section-title">📋 LỊCH SỬ GIAO DỊCH</div>
+    <div class="card">
+        <div style="overflow-x:auto">
+            <table class="history-table">
+                <thead><tr><th>Loại</th><th>Key/Số tiền</th><th>Thời gian</th><th>TT</th></tr></thead>
+                <tbody id="historyBody"><tr><td colspan="4">Chưa có giao dịch</td></tr></tbody>
+            </table>
+        </div>
     </div>
 </div>
 
@@ -381,21 +454,36 @@ function updateUI(){
     document.getElementById('userBtn').innerText='👤 '+currentUser.name;
     document.getElementById('balanceDisplay').innerText='💰 '+(currentUser.balance||0).toLocaleString()+'đ';
     if(currentUser.isAdmin)document.getElementById('adminBtn').classList.remove('hidden');
-    if(currentUser.isVip){document.getElementById('vipBadge').innerHTML='<span class="badge-vip">👑 VIP</span>';}
+    loadHistory();
 }
 function showToast(msg,type){var t=document.createElement('div');t.className='toast toast-'+(type||'success');t.innerText=msg;document.body.appendChild(t);setTimeout(function(){t.style.opacity='0';setTimeout(function(){t.remove()},300)},2500);}
 function logout(){localStorage.removeItem('qanh_user');window.location.href='/login';}
-function recharge(){if(!currentUser)return;var telco=document.getElementById('rcType').value,amount=parseInt(document.getElementById('rcAmount').value),pin=document.getElementById('rcPin').value.trim(),serial=document.getElementById('rcSerial').value.trim();if(!telco||!amount||!pin||!serial){showToast('⚠️ Điền đầy đủ!','error');return;}document.getElementById('rcResult').innerHTML='<div class="loading"></div><p style="color:var(--primary)">Đang xử lý...</p>';fetch('https://api.shoppay.vn/card/charge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({partner_id:'70406595609',partner_key:'add9c7d61cb54ff1b447e2188c71a8c2',telco:telco,amount:amount,pin:pin,serial:serial})}).then(function(r){return r.json()}).then(function(d){if(d.status===1){currentUser.balance=(currentUser.balance||0)+amount;localStorage.setItem('qanh_user',JSON.stringify(currentUser));updateUI();document.getElementById('rcResult').innerHTML='<div class="success-box">✅ Nạp '+amount.toLocaleString()+'đ!</div>';document.getElementById('rcPin').value='';document.getElementById('rcSerial').value='';}else{document.getElementById('rcResult').innerHTML='<div class="alert-box">❌ '+(d.message||'Lỗi')+'</div>';}}).catch(function(){document.getElementById('rcResult').innerHTML='<div class="alert-box">❌ Lỗi kết nối!</div>';});}
+function recharge(){if(!currentUser)return;var telco=document.getElementById('rcType').value,amount=parseInt(document.getElementById('rcAmount').value),pin=document.getElementById('rcPin').value.trim(),serial=document.getElementById('rcSerial').value.trim();if(!telco||!amount||!pin||!serial){showToast('⚠️ Điền đầy đủ!','error');return;}document.getElementById('rcResult').innerHTML='<div class="loading"></div><p style="color:var(--primary)">Đang xử lý...</p>';fetch('https://api.shoppay.vn/card/charge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({partner_id:'70406595609',partner_key:'add9c7d61cb54ff1b447e2188c71a8c2',telco:telco,amount:amount,pin:pin,serial:serial})}).then(function(r){return r.json()}).then(function(d){if(d.status===1){currentUser.balance=(currentUser.balance||0)+amount;localStorage.setItem('qanh_user',JSON.stringify(currentUser));updateUI();document.getElementById('rcResult').innerHTML='<div class="success-box">✅ Nạp '+amount.toLocaleString()+'đ!</div>';document.getElementById('rcPin').value='';document.getElementById('rcSerial').value='';fetch(API+'/api/save-transaction?type=recharge&amount='+amount+'&email='+encodeURIComponent(currentUser.email));}else{document.getElementById('rcResult').innerHTML='<div class="alert-box">❌ '+(d.message||'Lỗi')+'</div>';}}).catch(function(){document.getElementById('rcResult').innerHTML='<div class="alert-box">❌ Lỗi kết nối!</div>';});}
 function buyKey(type){if(!currentUser)return;var p=keyPrices[type];if((currentUser.balance||0)<p){showToast('❌ Không đủ!','error');return;}pendingBuy=type;document.getElementById('confirmKeyType').innerText=keyNames[type];document.getElementById('confirmKeyPrice').innerText=p.toLocaleString()+'đ';document.getElementById('confirmBalance').innerText=(currentUser.balance||0).toLocaleString()+'đ';document.getElementById('confirmBuyModal').classList.add('active');}
-function confirmBuy(){if(!pendingBuy)return;var type=pendingBuy,p=keyPrices[type];pendingBuy=null;document.getElementById('confirmBuyModal').classList.remove('active');currentUser.balance-=p;localStorage.setItem('qanh_user',JSON.stringify(currentUser));updateUI();fetch(API+'/api/buy-key?type='+type).then(function(r){return r.json()}).then(function(d){if(d.status==='success'){document.getElementById('keyDisplay').innerText=d.key;document.getElementById('keyMessage').innerText='Mua '+keyNames[type]+' thành công!';document.getElementById('keyModal').classList.add('active');}else{currentUser.balance+=p;localStorage.setItem('qanh_user',JSON.stringify(currentUser));updateUI();}}).catch(function(){currentUser.balance+=p;localStorage.setItem('qanh_user',JSON.stringify(currentUser));updateUI();});}
+function confirmBuy(){if(!pendingBuy)return;var type=pendingBuy,p=keyPrices[type];pendingBuy=null;document.getElementById('confirmBuyModal').classList.remove('active');currentUser.balance-=p;localStorage.setItem('qanh_user',JSON.stringify(currentUser));updateUI();fetch(API+'/api/buy-key?type='+type+'&email='+encodeURIComponent(currentUser.email)).then(function(r){return r.json()}).then(function(d){if(d.status==='success'){document.getElementById('keyDisplay').innerText=d.key;document.getElementById('keyMessage').innerText='Mua '+keyNames[type]+' thành công! Key đã lưu!';document.getElementById('keyModal').classList.add('active');}else{currentUser.balance+=p;localStorage.setItem('qanh_user',JSON.stringify(currentUser));updateUI();showToast('❌ Lỗi!','error');}}).catch(function(){currentUser.balance+=p;localStorage.setItem('qanh_user',JSON.stringify(currentUser));updateUI();});}
 function copyKey(){var k=document.getElementById('keyDisplay').innerText;navigator.clipboard.writeText(k).then(function(){showToast('✅ Đã copy!')}).catch(function(){prompt('Copy:',k)});}
 function showAdminModal(){if(!currentUser||!currentUser.isAdmin)return;document.getElementById('adminModal').classList.add('active');}
 function adminSetBalance(){var e=document.getElementById('adminTargetEmail').value.trim(),a=parseInt(document.getElementById('adminSetBalance').value);if(!e||isNaN(a))return;fetch(API+'/api/admin-set-balance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e,amount:a})}).then(function(r){return r.json()}).then(function(d){showToast(d.message||'✅ OK!');document.getElementById('adminModal').classList.remove('active');});}
-function adminQuickFreeKey(){document.getElementById('adminModal').classList.remove('active');fetch(API+'/api/create-key?type=free').then(function(r){return r.json()}).then(function(d){if(d.status==='success'){document.getElementById('keyDisplay').innerText=d.key;document.getElementById('keyMessage').innerText='Key Free Admin!';document.getElementById('keyModal').classList.add('active');}});}
+function adminQuickFreeKey(){document.getElementById('adminModal').classList.remove('active');fetch(API+'/api/create-key?type=free&email='+encodeURIComponent(currentUser.email)).then(function(r){return r.json()}).then(function(d){if(d.status==='success'){document.getElementById('keyDisplay').innerText=d.key;document.getElementById('keyMessage').innerText='Key Free Admin!';document.getElementById('keyModal').classList.add('active');}});}
+function loadHistory(){
+    if(!currentUser)return;
+    fetch(API+'/api/get-history?email='+encodeURIComponent(currentUser.email))
+    .then(function(r){return r.json()})
+    .then(function(d){
+        var hb=document.getElementById('historyBody');
+        if(!d.transactions||d.transactions.length===0){hb.innerHTML='<tr><td colspan="4">Chưa có giao dịch</td></tr>';return;}
+        var html='';
+        for(var i=d.transactions.length-1;i>=Math.max(0,d.transactions.length-10);i--){
+            var t=d.transactions[i];
+            html+='<tr><td>'+(t.type==='recharge'?'💳 Nạp':t.type==='buy_key'?'🔑 Mua Key':'🆓 Free')+'</td><td>'+(t.key||t.amount.toLocaleString()+'đ')+'</td><td>'+new Date(t.time).toLocaleString()+'</td><td style="color:'+(t.status==='success'?'var(--green)':'var(--red)')+'">'+(t.status==='success'?'✅':'❌')+'</td></tr>';
+        }
+        hb.innerHTML=html;
+    });
+}
 updateUI();
 </script>
 </body>
-</html>"""
+</html>""" + """</html>"""
 
 # ===== ROUTES =====
 @app.route('/')
@@ -452,6 +540,7 @@ def api_register():
         return jsonify({"status": "error", "message": "Email đã được sử dụng!"})
     code = generate_verify_code()
     pending_registrations[email] = {"username": username, "password": password, "phone": phone, "code": code, "time": time()}
+    save_all_data()
     send_verification_email(email, code)
     return jsonify({"status": "success", "message": "Mã xác minh đã gửi!"})
 
@@ -464,6 +553,7 @@ def api_resend_code():
     code = generate_verify_code()
     pending_registrations[email]["code"] = code
     pending_registrations[email]["time"] = time()
+    save_all_data()
     send_verification_email(email, code)
     return jsonify({"status": "success"})
 
@@ -477,11 +567,13 @@ def api_verify_email():
     pending = pending_registrations[email]
     if time() - pending["time"] > 60:
         del pending_registrations[email]
+        save_all_data()
         return jsonify({"status": "error", "message": "Mã hết hạn!"})
     if pending["code"] != code:
         return jsonify({"status": "error", "message": "Mã không đúng!"})
     users_db[email] = {"name": pending["username"], "email": email, "password": pending["password"], "phone": pending["phone"], "balance": 0, "isAdmin": False, "isVip": False}
     del pending_registrations[email]
+    save_all_data()
     return jsonify({"status": "success", "user": users_db[email]})
 
 @app.route('/api/login', methods=['POST'])
@@ -501,14 +593,26 @@ def api_login():
 @app.route('/api/buy-key')
 def api_buy_key():
     key_type = request.args.get('type', 'week')
+    email = request.args.get('email', '')
     key = generate_key()
-    save_key_to_bot(key, key_type)
+    
+    # LƯU KEY VÀO DATABASE WEB
+    save_key_local(key, key_type, email)
+    # Gửi lệnh cho bot
+    send_key_to_bot(key, key_type)
+    # Lưu giao dịch
+    prices = {'week': 50000, 'month': 150000, 'forever': 250000}
+    save_transaction(email, 'buy_key', prices.get(key_type, 0), key, 'success')
+    
     return jsonify({"status": "success", "key": key})
 
 @app.route('/api/create-key')
 def api_create_key():
     key = generate_key()
-    save_key_to_bot(key, 'free')
+    email = request.args.get('email', 'admin')
+    save_key_local(key, 'free', email)
+    send_key_to_bot(key, 'free')
+    save_transaction(email, 'free_key', 0, key, 'success')
     return jsonify({"status": "success", "key": key})
 
 @app.route('/api/get-free-link')
@@ -522,46 +626,56 @@ def api_get_free_link():
         link_data = res.json()
         if link_data.get('status') == 'success':
             pending_verify[token] = {"email": email, "time": time(), "verified": False, "key": None}
+            save_all_data()
             return jsonify({"status": "success", "link4m": link_data.get('shortenedUrl'), "token": token})
     except: pass
     return jsonify({"status": "error", "message": "Lỗi tạo link!"})
 
 @app.route('/verify/<token>')
 def verify_page(token):
-    """Trang verify THẬT - User đến từ link4m sau khi hoàn thành nhiệm vụ"""
     if token not in pending_verify:
         return "<h1>⚠️ Link không hợp lệ!</h1>", 404
     
+    email = pending_verify[token].get("email", "")
     key = generate_key()
-    save_key_to_bot(key, 'free')
+    
+    # LƯU KEY
+    save_key_local(key, 'free', email)
+    send_key_to_bot(key, 'free')
+    save_transaction(email, 'free_key_verified', 0, key, 'success')
+    
     pending_verify[token]["verified"] = True
     pending_verify[token]["key"] = key
+    save_all_data()
     
-    return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><title>✅ Xác Thực Thành Công</title>
-<style>body{{background:#0F0F1A;color:#fff;text-align:center;padding:50px;font-family:'Plus Jakarta Sans',Arial}}h2{{color:#00D68F;font-size:24px}}.key{{color:#00D68F;background:#000;padding:18px;border-radius:14px;border:2px dashed rgba(0,214,143,0.3);font-family:monospace;font-size:18px;margin:15px 0;word-break:break-all}}button{{background:#6C5CE7;color:#fff;padding:14px 28px;border:none;border-radius:12px;font-weight:700;font-size:16px;cursor:pointer;margin:8px}}button:hover{{background:#5A4BD1}}.earned{{color:#FFD700;background:rgba(255,215,0,0.1);padding:10px;border-radius:10px;margin:10px 0}}</style></head>
-<body><h2>✅ HOÀN THÀNH NHIỆM VỤ!</h2><p>Cảm ơn bạn đã ủng hộ! Link4m đã ghi nhận.</p><div class='key'>{key}</div>
+    return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><title>✅ Xác Thực</title>
+<style>body{{background:#0F0F1A;color:#fff;text-align:center;padding:50px;font-family:'Plus Jakarta Sans',Arial}}h2{{color:#00D68F}}.key{{color:#00D68F;background:#000;padding:18px;border-radius:14px;border:2px dashed rgba(0,214,143,0.3);font-family:monospace;font-size:18px;margin:15px 0;word-break:break-all}}button{{background:#6C5CE7;color:#fff;padding:14px 28px;border:none;border-radius:12px;font-weight:700;font-size:16px;cursor:pointer}}</style></head>
+<body><h2>✅ HOÀN THÀNH NHIỆM VỤ!</h2><div class='key'>{key}</div>
 <button onclick="navigator.clipboard.writeText('{key}')">📋 COPY KEY</button>
-<p style='color:#8E8E9A;margin-top:15px'>💡 Dùng <b>/kichhoat {key[:20]}...</b> trong bot Telegram</p>
+<p style='color:#8E8E9A;margin-top:15px'>💡 Dùng <b>/kichhoat {key[:20]}...</b> trong bot</p>
 <script>setTimeout(function(){{if(window.opener&&!window.opener.closed)window.opener.location.reload()}},2000);</script></body></html>"""
 
 @app.route('/api/check-verify')
 def api_check_verify():
-    """Check verify - CHỈ trả key khi user đã hoàn thành link4m"""
     token = request.args.get('token', '')
-    if token in pending_verify:
-        verify_data = pending_verify[token]
-        # Kiểm tra link4m thực sự
-        earned, amount = check_link4m_earnings(token)
-        if earned or verify_data.get("verified"):
-            if not verify_data.get("verified"):
-                # Tạo key nếu link4m báo có earnings
-                key = generate_key()
-                save_key_to_bot(key, 'free')
-                verify_data["verified"] = True
-                verify_data["key"] = key
-            return jsonify({"status": "verified", "key": verify_data.get("key"), "earned": amount})
-        return jsonify({"status": "pending", "message": "Đang chờ xác nhận từ link4m..."})
-    return jsonify({"status": "error", "message": "Token không hợp lệ"})
+    if token in pending_verify and pending_verify[token].get("verified"):
+        return jsonify({"status": "verified", "key": pending_verify[token]["key"]})
+    return jsonify({"status": "pending"})
+
+@app.route('/api/save-transaction')
+def api_save_transaction():
+    email = request.args.get('email', '')
+    trans_type = request.args.get('type', '')
+    amount = request.args.get('amount', 0)
+    save_transaction(email, trans_type, int(amount), '', 'success')
+    return jsonify({"status": "success"})
+
+@app.route('/api/get-history')
+def api_get_history():
+    email = request.args.get('email', '')
+    user_transactions = [t for t in transactions_db if t.get('email') == email]
+    user_keys = [k for k in keys_db.get("keys_history", []) if k.get('email') == email]
+    return jsonify({"transactions": user_transactions, "keys": user_keys})
 
 @app.route('/api/admin-set-balance', methods=['POST'])
 def api_admin_set_balance():
@@ -570,6 +684,8 @@ def api_admin_set_balance():
     amount = data.get('amount', 0)
     if email in users_db:
         users_db[email]['balance'] = amount
+        save_all_data()
+        save_transaction(email, 'admin_set_balance', amount, '', 'success')
         return jsonify({"status": "success", "message": f"Đã cập nhật {email}: {amount}đ"})
     return jsonify({"status": "error", "message": "Không tìm thấy!"})
 
