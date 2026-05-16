@@ -123,19 +123,22 @@ def save_transaction(email, trans_type, amount, key="", status="success"):
     save_all_data()
 
 def send_key_to_bot(key, key_type):
-    """Gửi lệnh /taokey cho bot Telegram để bot lưu key"""
+    """Gửi lệnh /taokey cho bot Telegram"""
     try:
         cmds = {'free': 'free 1ngay', 'week': '1w', 'month': 'vip 1thang', 'forever': 'vip vinhvien'}
         cmd = cmds.get(key_type, 'free 1ngay')
-        res = requests.post(
-            f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage',
-            json={'chat_id': CHAT_ID, 'text': f'/taokey {cmd}'},
-            timeout=10
-        )
-        print(f"Bot taokey response: {res.json()}")
+        
+        # Gửi message CHỨA LỆNH /taokey
+        url = f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage'
+        res = requests.post(url, json={
+            'chat_id': CHAT_ID,
+            'text': f'/taokey {cmd}'
+        }, timeout=10)
+        
+        print(f"Bot response: {res.json()}")
         return True
     except Exception as e:
-        print(f"Send key to bot error: {e}")
+        print(f"Lỗi gửi key: {e}")
         return False
 
 def send_verification_email(to_email, code):
